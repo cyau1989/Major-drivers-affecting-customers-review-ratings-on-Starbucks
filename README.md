@@ -5,13 +5,13 @@ This report aims to investigate the major drivers affecting customers’ review 
 Key Words: PLM, RF, OLS, Rpart, GBM, SVM, LDA, K-mean clustering, Word Cloud, Dictionary approach, topic modeling, text classification
 
 # R File
-GP8 - Initial Data Preparation.Rmd
-GP8 - Data Merging with New Variables.rmd
-GP8 - 2.1_5.2.4 - Exploratory Data Analysis and Word Cloud.Rmd	
-GP8 - 2.2.2_3.2.4 - Location Clustering.Rmd	
-GP8 - 3.2.1_5.2.1 - Sentiment Score (Dictionary Approach).Rmd
-GP8 - 3.2.2_5.2.2 - Text Classification.rmd	
-GP8 - 3.2.3_5.2.3 - Topic Modelling.Rmd
+GP8 - Initial Data Preparation.Rmd, 
+GP8 - Data Merging with New Variables.rmd, 
+GP8 - 2.1_5.2.4 - Exploratory Data Analysis and Word Cloud.Rmd, 	
+GP8 - 2.2.2_3.2.4 - Location Clustering.Rmd, 	
+GP8 - 3.2.1_5.2.1 - Sentiment Score (Dictionary Approach).Rmd, 
+GP8 - 3.2.2_5.2.2 - Text Classification.rmd, 	
+GP8 - 3.2.3_5.2.3 - Topic Modelling.Rmd, 
 GP8 - 4_5.1_5.2.5 - Main Modelling And Enhancement.Rmd
 
 # Project Report
