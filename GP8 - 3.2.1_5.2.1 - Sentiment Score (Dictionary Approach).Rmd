@@ -1,0 +1,597 @@
+---
+title: "DMT Final Project - Sentiment Score (Dictionary Approach)"
+author: "Group 8"
+date: "23 April, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+options(width=120)
+knitr::opts_chunk$set(comment = "", warning = FALSE, message = FALSE, echo = TRUE, tidy = TRUE, size="small",progress = FALSE)
+
+library(knitr)
+library(data.table)
+library(plyr)
+library(stringr)
+library(tm)
+library(SnowballC)
+library(RColorBrewer)
+library(wordcloud)
+library(ggplot2)
+library(lubridate)
+library(nnet)
+library(stargazer)
+
+setwd("C:/Users/Lu/OneDrive/MSBA/Term 2/DMT/Final Project")
+```
+
+```{r}
+# Loading Data
+data <- load("yelp_DD.RData")
+
+# import dictionaries of positive and negative words
+pos <- readLines("positive_words.txt")
+neg <- readLines("negative_words.txt")
+```
+
+
+### Define Sentiment Score Functions
+#### **score.sentiment1** for the use in *Formula 1* and  *Formula 3*
+```{r}
+score.sentiment1 <- function(id, sentences, pos.words, neg.words)
+{
+  pos <- laply(sentences,
+                 function(sentence, pos.words, neg.words)
+                 {sentence <- gsub("[[:punct:]]", "", sentence) # remove punctuation
+                  sentence <- gsub("[[:cntrl:]]", "", sentence) # remove control characters
+                  sentence <- gsub('\\d+', '', sentence)  # remove digits
+                  tryTolower <- function(x) # define error handling function when trying tolower
+                   {  y <- NA # create missing value
+                      try_error <- tryCatch(tolower(x), error=function(e) e) # tryCatch error
+                      if (!inherits(try_error, "error")) # if not an error
+                      y <- tolower(x)
+                     return(y) # result
+                   }
+                   sentence <- sapply(sentence, tryTolower)  # use tryTolower with sapply
+                   word.list <- str_split(sentence, "\\s+") # split sentence into words with str_split
+                   words <- unlist(word.list)
+                  
+                   # compare words to the dictionaries of positive & negative terms
+                   pos.matches <- match(words, pos.words)
+                   
+                   # get the position of the matched term or NA
+                   pos.matches <- !is.na(pos.matches)
+                   
+                   pos <- sum(pos.matches)
+                   return(pos)
+                   
+                 }, pos.words, neg.words)
+  
+  
+  neg <- laply(sentences,
+                 function(sentence, pos.words, neg.words)
+                 {sentence <- gsub("[[:punct:]]", "", sentence) # remove punctuation
+                  sentence <- gsub("[[:cntrl:]]", "", sentence) # remove control characters
+                  sentence <- gsub('\\d+', '', sentence)  # remove digits
+                  tryTolower <- function(x) # define error handling function when trying tolower
+                   {  y <- NA # create missing value
+                      try_error <- tryCatch(tolower(x), error=function(e) e) # tryCatch error
+                      if (!inherits(try_error, "error")) # if not an error
+                      y <- tolower(x)
+                     return(y) # result
+                   }
+                   sentence <- sapply(sentence, tryTolower)  # use tryTolower with sapply
+                   word.list <- str_split(sentence, "\\s+") # split sentence into words with str_split
+                   words <- unlist(word.list)
+                  
+                   # compare words to the dictionaries of positive & negative terms
+                   neg.matches <- match(words, neg.words)
+                   
+                   # get the position of the matched term or NA
+                   neg.matches <- !is.na(neg.matches)
+                   
+                   neg <- sum(neg.matches)
+                   return(neg)
+                   
+                 }, pos.words, neg.words)
+  
+  # data frame with scores for each sentence
+  scores.df <- data.frame(id = id, text=sentences, pos=pos,neg=neg)
+  return(scores.df)
+}
+```
+
+
+#### **score.sentiment2** for the use in *Formula 2*
+```{r}
+score.sentiment2 <- function(id, sentences, pos.words, neg.words)
+{
+  scores <- laply(sentences,
+                 function(sentence, pos.words, neg.words)
+                 {sentence <- gsub("[[:punct:]]", "", sentence) # remove punctuation
+                  sentence <- gsub("[[:cntrl:]]", "", sentence) # remove control characters
+                  sentence <- gsub('\\d+', '', sentence)  # remove digits
+                  tryTolower <- function(x) # define error handling function when trying tolower
+                   {  y <- NA # create missing value
+                      try_error <- tryCatch(tolower(x), error=function(e) e) # tryCatch error
+                      if (!inherits(try_error, "error")) # if not an error
+                      y <- tolower(x)
+                     return(y) # result
+                   }
+                   sentence <- sapply(sentence, tryTolower)  # use tryTolower with sapply
+                   word.list <- str_split(sentence, "\\s+") # split sentence into words with str_split
+                   words <- unlist(word.list)
+                  
+                   # compare words to the dictionaries of positive & negative terms
+                   pos.matches <- match(words, pos.words)
+                   neg.matches <- match(words, neg.words)
+                   
+                   # get the position of the matched term or NA
+                   pos.matches <- !is.na(pos.matches)
+                   neg.matches <- !is.na(neg.matches)
+                   
+                   score <- sum(pos.matches) / (sum(pos.matches) + sum(neg.matches))
+                   return(score)
+                 }, pos.words, neg.words)
+  
+  # data frame with scores for each sentence
+  scores.df <- data.frame(id = id, text=sentences, score=scores)
+  return(scores.df)
+}
+
+```
+
+#### Starbucks
+##### Apply Formula 1, 2 and 3 on the review text per **review_iD**   
+```{r}
+# construct a columnes to identify "week_year"
+review_Starbucks$week <- isoweek(review_Starbucks$date)
+review_Starbucks$year_week <- paste(year(review_Starbucks$date),"-",review_Starbucks$week)
+
+# apply function score.sentiment1 and score.sentiment2
+## Formula 1
+scores_review1 <- score.sentiment1(review_Starbucks$review_id, review_Starbucks$text, pos, neg)
+scores_review1$score <- scores_review1$pos - scores_review1$neg
+summary(scores_review1[,-2])
+
+## Formula 2
+scores_review2 <- score.sentiment2(review_Starbucks$review_id, review_Starbucks$text, pos, neg)
+summary(scores_review2[,-2])
+
+## Formula 3
+scores_review3 <- scores_review1
+total_pos3 <- mean(scores_review3$pos)
+total_neg3 <- mean(scores_review3$neg)
+scores_review3$pos.adj <- scores_review3$pos/ total_pos3
+scores_review3$neg.adj <- scores_review3$neg/ total_neg3
+scores_review3$score <- scores_review3$pos.adj - scores_review3$neg.adj
+summary(scores_review3[,-2])
+
+# extension to count very positive or very negative sentences, using 1st and 3rd quantile as cutoff
+scores_review1$very.pos <- as.factor(ifelse(scores_review1$score >= quantile(scores_review1$score,0.75),"1","0"))
+scores_review1$very.neg <- as.factor(ifelse(scores_review1$score < quantile(scores_review1$score,0.25),"1","0"))
+summary(scores_review1[,-2])
+
+scores_review2$very.pos <- as.factor(ifelse(scores_review2$score >= quantile(na.omit(scores_review2$score),0.75),"1","0"))
+scores_review2$very.neg <- as.factor(ifelse(scores_review2$score < quantile(na.omit(scores_review2$score),0.25),"1","0"))
+summary(scores_review2[,-2])
+
+scores_review3$very.pos <- as.factor(ifelse(scores_review3$score > quantile(scores_review3$score,0.75),"1","0"))
+scores_review3$very.neg <- as.factor(ifelse(scores_review3$score < quantile(scores_review3$score,0.25),"1","0"))
+summary(scores_review3[,-2])
+
+scores_review <- merge(scores_review1[,c(1,5:7)], scores_review2[,c(1,3:5)], by = "id")
+scores_review <- merge(scores_review, scores_review3[,c(1,5,8:9)],by = "id")
+
+colnames(scores_review) <- c("review_id","score1","score1_very.pos","score1_very.neg","score2","score2_very.pos","score2_very.neg","score3","score3_very.pos","score3_very.neg")
+summary(scores_review)
+saveRDS(scores_review,"review_senti_score_s")
+
+review_Starbucks2 <- merge(review_Starbucks, scores_review, by = "review_id")
+```
+
+
+##### Apply Formula 1, 2 and 3 on the tip text per **tip_iD**   
+```{r}
+# construct a columnes to identify "week_year"
+tip_Starbucks$id <- 1:nrow(tip_Starbucks)
+tip_Starbucks$week <- isoweek(tip_Starbucks$date)
+tip_Starbucks$year_week <- paste(year(tip_Starbucks$date),"-",tip_Starbucks$week)
+tip_Starbucks$Month_Yr <- format(as.Date(tip_Starbucks$date), "%Y-%m")
+
+# Formula 1
+scores_tip1 <- score.sentiment1(tip_Starbucks$id, tip_Starbucks$text, pos, neg)
+scores_tip1$score <- scores_tip1$pos - scores_tip1$neg
+summary(scores_tip1[,-2])
+
+# Formula 2
+scores_tip2 <- score.sentiment2(tip_Starbucks$id, tip_Starbucks$text, pos, neg)
+summary(scores_tip2[,-2])
+
+# Formula 3
+scores_tip3 <- scores_tip1
+total_tip_pos3 <- mean(scores_tip3$pos)
+total_tip_neg3 <- mean(scores_tip3$neg)
+scores_tip3$pos.adj <- scores_tip3$pos/ total_tip_pos3
+scores_tip3$neg.adj <- scores_tip3$neg/ total_tip_neg3
+scores_tip3$score <- scores_tip3$pos.adj - scores_tip3$neg.adj
+summary(scores_tip3[,-2])
+
+# extension to count very positive or very negative sentences, using 1st and 3rd quantile as cutoff
+scores_tip1$very.pos <- as.factor(ifelse(scores_tip1$score >= quantile(scores_tip1$score,0.75),"1","0"))
+scores_tip1$very.neg <- as.factor(ifelse(scores_tip1$score < quantile(scores_tip1$score,0.25),"1","0"))
+summary(scores_tip1[,-2])
+
+scores_tip2$very.pos <- as.factor(ifelse(scores_tip2$score >= quantile(na.omit(scores_tip2$score),0.75),"1","0"))
+scores_tip2$very.neg <- as.factor(ifelse(scores_tip2$score < quantile(na.omit(scores_tip2$score),0.25),"1","0"))
+summary(scores_tip2[,-2])
+
+scores_tip3$very.pos <- as.factor(ifelse(scores_tip3$score > quantile(scores_tip3$score,0.75),"1","0"))
+scores_tip3$very.neg <- as.factor(ifelse(scores_tip3$score < quantile(scores_tip3$score,0.25),"1","0"))
+summary(scores_tip3[,-2])
+
+scores_tip <- merge(scores_tip1[,c(1,5:7)], scores_tip2[,c(1,3:5)], by = "id")
+scores_tip <- merge(scores_tip, scores_tip3[,c(1,5,8:9)],by = "id")
+
+colnames(scores_tip) <- c("id","score1","score1_very.pos","score1_very.neg","score2","score2_very.pos","score2_very.neg","score3","score3_very.pos","score3_very.neg")
+
+summary(scores_tip)
+saveRDS(scores_tip,"tip_senti_score_s")
+
+tip_Starbucks2 <- merge(scores_tip, tip_Starbucks, by = "id")
+```
+
+
+#### Relationship between Sentiment Scores (1, 2 & 3) with Review Ratings
+##### Individual Review Level
+###### Overview by density plots and Boxplots
+```{r,echo=FALSE}
+plot0 <- ggplot(data = review_Starbucks2, mapping = aes(x = score1, fill = as.factor(stars)))
+plot1 <- plot0 + geom_density(alpha = 0.45, position = "identity") + labs(title  = "Review: Distribution of Score1 by Stars") + labs(x  = "Sentiment Score 1", y = "density") + scale_fill_discrete(name = "Review Star") + theme_bw() + theme(legend.title = element_text(size = 9))
+plot1
+
+plot0 <- ggplot(data = review_Starbucks2, mapping = aes(x = as.factor(stars), y = score1, fill = stars))
+plot1 <- plot0 + geom_boxplot() + labs(title  = "Reivew: Distribution of Score1 by Stars") + scale_fill_gradient(name = "Review Star",low ="#FFFF66" , high = "#33CC33") + labs(x  = "Review Star", y = "Sentiment Score 1") + theme_bw()+coord_flip()
+plot1
+
+plot0 <- ggplot(data = review_Starbucks2, mapping = aes(x = score2, fill = as.factor(stars)))
+plot1 <- plot0 + geom_density(alpha = 0.45, position = "identity") + labs(title  = "Review: Distribution of Score2 by Stars") + labs(x  = "Sentiment Score 2", y = "density") + scale_fill_discrete(name = "Review Star") + theme_bw()+ xlim(-0.25,1.25)
+plot1
+
+plot0 <- ggplot(data = review_Starbucks2, mapping = aes(x = as.factor(stars), y = score2, fill = stars))
+plot1 <- plot0 + geom_boxplot() + labs(title  = "Reivew: Distribution of Score2 by Stars") + scale_fill_gradient(name = "Review Star",low ="#FFFF66" , high = "#33CC33") + labs(x  = "Review Star", y = "Sentiment Score 2") + theme_bw()+coord_flip()
+plot1
+
+plot0 <- ggplot(data = review_Starbucks2, mapping = aes(x = score3, fill = as.factor(stars)))
+plot1 <- plot0 + geom_density(alpha = 0.45, position = "identity") + labs(title  = "Review: Distribution of Score3 by Stars") + labs(x  = "Sentiment Score 3", ym = "density") + scale_fill_discrete(name = "Review Star") + theme_bw()
+plot1
+
+plot0 <- ggplot(data = review_Starbucks2, mapping = aes(x = as.factor(stars), y = score3, fill = stars))
+plot1 <- plot0 + geom_boxplot() + labs(title  = "Review: Distribution of Score3 by Stars") + scale_fill_gradient(name = "Review Star",low ="#FFFF66" , high = "#33CC33") + labs(x  = "Review Star", y = "Sentiment Score 3") + theme_bw() + coord_flip()
+plot1
+```
+
+###### multinomial logistic regression to evaluate the relevance of Score1 Score2 and Score3 with Review Raitngs
+```{r}
+review_Starbucks2$stars2 <- as.factor(review_Starbucks2$stars)
+
+score1 <- multinom(stars2 ~ score1, data = review_Starbucks2)
+score2 <- multinom(stars2 ~ score2, data = review_Starbucks2)
+score3 <- multinom(stars2 ~ score3, data = review_Starbucks2)
+score12 <- multinom(stars2 ~ score1 + score2, data = review_Starbucks2)
+score13 <- multinom(stars2 ~ score1 + score3, data = review_Starbucks2)
+score23 <- multinom(stars2 ~ score2 + score3, data = review_Starbucks2)
+score123 <- multinom(stars2 ~ score1 + score2 + score3, data = review_Starbucks2)
+```
+
+```{r, results='asis'}
+kable(data.frame(Score = c("1","2","3","1&2","1&3","2&3","1,2&3"),'Residual Deviance' = c(score1$deviance,score2$deviance,score3$deviance,score12$deviance,score13$deviance,score23$deviance,score123$deviance), AIC = c(score1$AIC,score2$AIC,score3$AIC,score12$AIC,score13$AIC,score23$AIC,score123$AIC)),caption = "Sentiment Score Evaluation - Review Level")
+```
+
+
+##### Aggregated on Business and Weekly Level (Review Text)
+###### Overview by scatterplots
+```{r}
+review_Starbucks3 <- review_Starbucks2[,c("business_id","year_week","stars","score1","score2","score3")]
+setDT(review_Starbucks3)
+review_bizweek <- review_Starbucks3[, c("avg_score1","avg_score2","avg_score3","avg_star"):=list(mean(score1),mean(score2),mean(score3),mean(stars)), by = c("business_id", "year_week")]
+
+summary(review_bizweek)
+```
+
+
+```{r,echo = FALSE}
+plot0 <- ggplot(data = review_bizweek, mapping = aes(x = avg_star, y = avg_score1))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Review: Weekly Sentiment Score 1 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 1") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+
+plot0 <- ggplot(data = review_bizweek, mapping = aes(x = avg_star, y = avg_score2))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Review: Weekly Sentiment Score 2 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 2") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+
+plot0 <- ggplot(data = review_bizweek, mapping = aes(x = avg_star, y = avg_score3))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Review: Weekly Sentiment Score 3 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 3") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+```
+
+###### OLS to evaluate the relevance of Score1 Score2 and Score3 with Review Raitngs on weekly average basis
+```{r}
+score1b <- lm(avg_star ~ avg_score1, data = review_bizweek)
+score2b <- lm(avg_star ~ avg_score2, data = review_bizweek)
+score3b <- lm(avg_star ~ avg_score3, data = review_bizweek)
+score12b <- lm(avg_star ~ avg_score1 + avg_score2, data = review_bizweek)
+score13b <- lm(avg_star ~ avg_score1 + avg_score3, data = review_bizweek)
+score23b <- lm(avg_star ~ avg_score2 + avg_score3, data = review_bizweek)
+score123b <- lm(avg_star ~ avg_score1 + avg_score2 + avg_score3, data = review_bizweek)
+```
+
+```{r, results='asis'}
+stargazer::stargazer(score1b, score2b, score3b, score12b,score13b,score23b,score123b,title = "Results Comparison", out = "Results Comparison.html", type = "html", dep.var.caption = "Review Stars", dep.var.labels.include = FALSE, column.labels = c("1","2","3","1&2","1&3","2&3","1,2&3"),model.numbers = FALSE)
+```
+
+##### Aggregated on Business and Weekly Level (Tip Text)
+###### Overview by scatterplots
+```{r}
+tip_byweek <- review_Starbucks[,c("business_id","year_week","stars")]
+tip_byweek <- merge(tip_byweek, tip_Starbucks2, by = c("business_id","year_week"))
+
+setDT(tip_byweek)
+tip_byweek <- tip_byweek[, c("avg_score1","avg_score2","avg_score3","avg_star"):=list(mean(score1),mean(score2),mean(score3),mean(stars)), by = c("business_id", "year_week")]
+summary(tip_byweek)
+```
+
+```{r,echo=FALSE}
+plot0 <- ggplot(data = tip_byweek, mapping = aes(x = avg_star, y = avg_score1))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Tip: Weekly Sentiment Score 1 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 1") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+
+plot0 <- ggplot(data = tip_byweek, mapping = aes(x = avg_star, y = avg_score2))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Tip: Weekly Sentiment Score 2 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 2") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+
+plot0 <- ggplot(data = tip_byweek, mapping = aes(x = avg_star, y = avg_score3))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Tip: Weekly Sentiment Score 3 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 3") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+```
+
+###### OLS to evaluate the relevance of Score1 Score2 and Score3 with Review Raitngs on weekly average basis
+```{r}
+score1b <- lm(avg_star ~ avg_score1, data = tip_byweek)
+score2b <- lm(avg_star ~ avg_score2, data = tip_byweek)
+score3b <- lm(avg_star ~ avg_score3, data = tip_byweek)
+score12b <- lm(avg_star ~ avg_score1 + avg_score2, data = tip_byweek)
+score13b <- lm(avg_star ~ avg_score1 + avg_score3, data = tip_byweek)
+score23b <- lm(avg_star ~ avg_score2 + avg_score3, data = tip_byweek)
+score123b <- lm(avg_star ~ avg_score1 + avg_score2 + avg_score3, data = tip_byweek)
+```
+
+```{r, results='asis'}
+stargazer::stargazer(score1b, score2b, score3b, score12b,score13b,score23b,score123b,title = "Results Comparison - Tip", out = "Results Comparison_Tip.html", type = "html", dep.var.caption = "Review Stars", dep.var.labels.include = FALSE, column.labels = c("1","2","3","1&2","1&3","2&3","1,2&3"),model.numbers = FALSE)
+```
+
+#### Dunkin's Donuts (Repeated Codes from above to apply on review on DD)
+##### Apply Formula 1, 2 and 3 on the review text per **review_iD**   
+```{r}
+# construct a columnes to identify "week_year"
+review_DD$week <- isoweek(review_DD$date)
+review_DD$year_week <- paste(year(review_DD$date),"-",review_DD$week)
+
+# apply function score.sentiment1 and score.sentiment2
+## Formula 1
+scores_review1 <- score.sentiment1(review_DD$review_id, review_DD$text, pos, neg)
+scores_review1$score <- scores_review1$pos - scores_review1$neg
+summary(scores_review1[,-2])
+
+## Formula 2
+scores_review2 <- score.sentiment2(review_DD$review_id, review_DD$text, pos, neg)
+summary(scores_review2[,-2])
+
+## Formula 3
+scores_review3 <- scores_review1
+total_pos3 <- mean(scores_review3$pos)
+total_neg3 <- mean(scores_review3$neg)
+scores_review3$pos.adj <- scores_review3$pos/ total_pos3
+scores_review3$neg.adj <- scores_review3$neg/ total_neg3
+scores_review3$score <- scores_review3$pos.adj - scores_review3$neg.adj
+summary(scores_review3[,-2])
+
+# extension to count very positive or very negative sentences, using 1st and 3rd quantile as cutoff
+scores_review1$very.pos <- as.factor(ifelse(scores_review1$score >= quantile(scores_review1$score,0.75),"1","0"))
+scores_review1$very.neg <- as.factor(ifelse(scores_review1$score < quantile(scores_review1$score,0.25),"1","0"))
+summary(scores_review1[,-2])
+
+scores_review2$very.pos <- as.factor(ifelse(scores_review2$score >= quantile(na.omit(scores_review2$score),0.75),"1","0"))
+scores_review2$very.neg <- as.factor(ifelse(scores_review2$score < quantile(na.omit(scores_review2$score),0.25),"1","0"))
+summary(scores_review2[,-2])
+
+scores_review3$very.pos <- as.factor(ifelse(scores_review3$score > quantile(scores_review3$score,0.75),"1","0"))
+scores_review3$very.neg <- as.factor(ifelse(scores_review3$score < quantile(scores_review3$score,0.25),"1","0"))
+summary(scores_review3[,-2])
+
+scores_review <- merge(scores_review1[,c(1,5:7)], scores_review2[,c(1,3:5)], by = "id")
+scores_review <- merge(scores_review, scores_review3[,c(1,5,8:9)],by = "id")
+
+colnames(scores_review) <- c("review_id","score1","score1_very.pos","score1_very.neg","score2","score2_very.pos","score2_very.neg","score3","score3_very.pos","score3_very.neg")
+summary(scores_review)
+saveRDS(scores_review,"review_senti_score_DD")
+
+review_DD2 <- merge(review_DD, scores_review, by = "review_id")
+```
+
+
+##### Apply Formula 1, 2 and 3 on the tip text per **tip_iD**   
+```{r}
+# construct a columnes to identify "week_year"
+tip_DD$id <- 1:nrow(tip_DD)
+tip_DD$week <- isoweek(tip_DD$date)
+tip_DD$year_week <- paste(year(tip_DD$date),"-",tip_DD$week)
+tip_DD$Month_Yr <- format(as.Date(tip_DD$date), "%Y-%m")
+
+# apply function score.sentiment1 and score.sentiment2
+scores_tip1 <- score.sentiment1(tip_DD$id, tip_DD$text, pos, neg)
+scores_tip1$score <- scores_tip1$pos - scores_tip1$neg
+summary(scores_tip1[,-2])
+
+scores_tip2 <- score.sentiment2(tip_DD$id, tip_DD$text, pos, neg)
+summary(scores_tip2[,-2])
+
+scores_tip3 <- scores_tip1
+total_tip_pos3 <- mean(scores_tip3$pos)
+total_tip_neg3 <- mean(scores_tip3$neg)
+scores_tip3$pos.adj <- scores_tip3$pos/ total_tip_pos3
+scores_tip3$neg.adj <- scores_tip3$neg/ total_tip_neg3
+scores_tip3$score <- scores_tip3$pos.adj - scores_tip3$neg.adj
+summary(scores_tip3[,-2])
+
+# extension to count very positive or very negative sentences, using 1st and 3rd quantile as cutoff
+scores_tip1$very.pos <- as.factor(ifelse(scores_tip1$score >= quantile(scores_tip1$score,0.75),"1","0"))
+scores_tip1$very.neg <- as.factor(ifelse(scores_tip1$score < quantile(scores_tip1$score,0.25),"1","0"))
+summary(scores_tip1[,-2])
+
+scores_tip2$very.pos <- as.factor(ifelse(scores_tip2$score >= quantile(na.omit(scores_tip2$score),0.75),"1","0"))
+scores_tip2$very.neg <- as.factor(ifelse(scores_tip2$score < quantile(na.omit(scores_tip2$score),0.25),"1","0"))
+summary(scores_tip2[,-2])
+
+scores_tip3$very.pos <- as.factor(ifelse(scores_tip3$score > quantile(scores_tip3$score,0.75),"1","0"))
+scores_tip3$very.neg <- as.factor(ifelse(scores_tip3$score < quantile(scores_tip3$score,0.25),"1","0"))
+summary(scores_tip3[,-2])
+
+scores_tip <- merge(scores_tip1[,c(1,5:7)], scores_tip2[,c(1,3:5)], by = "id")
+scores_tip <- merge(scores_tip, scores_tip3[,c(1,5,8:9)],by = "id")
+
+colnames(scores_tip) <- c("id","score1","score1_very.pos","score1_very.neg","score2","score2_very.pos","score2_very.neg","score3","score3_very.pos","score3_very.neg")
+
+summary(scores_tip)
+saveRDS(scores_tip,"tip_senti_score_DD")
+
+tip_DD2 <- merge(scores_tip, tip_DD, by = "id")
+```
+
+
+#### Relationship between Sentiment Scores (1, 2 & 3) with Review Ratings
+##### Individual Review Level
+###### Overview by density plots and Boxplots
+```{r,echo=FALSE}
+plot0 <- ggplot(data = review_DD2, mapping = aes(x = score1, fill = as.factor(stars)))
+plot1 <- plot0 + geom_density(alpha = 0.45, position = "identity") + labs(title  = "Review: Distribution of Score1 by Stars") + labs(x  = "Sentiment Score 1", y = "density") + scale_fill_discrete(name = "Review Star") + theme_bw() + theme(legend.title = element_text(size = 9))
+plot1
+
+plot0 <- ggplot(data = review_DD2, mapping = aes(x = as.factor(stars), y = score1, fill = stars))
+plot1 <- plot0 + geom_boxplot() + labs(title  = "Reivew: Distribution of Score1 by Stars") + scale_fill_gradient(name = "Review Star",low ="#FFFF66" , high = "#33CC33") + labs(x  = "Review Star", y = "Sentiment Score 1") + theme_bw()+coord_flip()
+plot1
+
+plot0 <- ggplot(data = review_DD2, mapping = aes(x = score2, fill = as.factor(stars)))
+plot1 <- plot0 + geom_density(alpha = 0.45, position = "identity") + labs(title  = "Review: Distribution of Score2 by Stars") + labs(x  = "Sentiment Score 2", y = "density") + scale_fill_discrete(name = "Review Star") + theme_bw()+ xlim(-0.25,1.25)
+plot1
+
+plot0 <- ggplot(data = review_DD2, mapping = aes(x = as.factor(stars), y = score2, fill = stars))
+plot1 <- plot0 + geom_boxplot() + labs(title  = "Reivew: Distribution of Score2 by Stars") + scale_fill_gradient(name = "Review Star",low ="#FFFF66" , high = "#33CC33") + labs(x  = "Review Star", y = "Sentiment Score 2") + theme_bw()+coord_flip()
+plot1
+
+plot0 <- ggplot(data = review_DD2, mapping = aes(x = score3, fill = as.factor(stars)))
+plot1 <- plot0 + geom_density(alpha = 0.45, position = "identity") + labs(title  = "Review: Distribution of Score3 by Stars") + labs(x  = "Sentiment Score 3", ym = "density") + scale_fill_discrete(name = "Review Star") + theme_bw()
+plot1
+
+plot0 <- ggplot(data = review_DD2, mapping = aes(x = as.factor(stars), y = score3, fill = stars))
+plot1 <- plot0 + geom_boxplot() + labs(title  = "Review: Distribution of Score3 by Stars") + scale_fill_gradient(name = "Review Star",low ="#FFFF66" , high = "#33CC33") + labs(x  = "Review Star", y = "Sentiment Score 3") + theme_bw() + coord_flip()
+plot1
+```
+
+###### multinomial logistic regression to evaluate the relevance of Score1 Score2 and Score3 with Review Raitngs
+```{r}
+review_DD2$stars2 <- as.factor(review_DD2$stars)
+
+score1 <- multinom(stars2 ~ score1, data = review_DD2)
+score2 <- multinom(stars2 ~ score2, data = review_DD2)
+score3 <- multinom(stars2 ~ score3, data = review_DD2)
+score12 <- multinom(stars2 ~ score1 + score2, data = review_DD2)
+score13 <- multinom(stars2 ~ score1 + score3, data = review_DD2)
+score23 <- multinom(stars2 ~ score2 + score3, data = review_DD2)
+score123 <- multinom(stars2 ~ score1 + score2 + score3, data = review_DD2)
+```
+
+```{r, results='asis'}
+kable(data.frame(Score = c("1","2","3","1&2","1&3","2&3","1,2&3"),'Residual Deviance' = c(score1$deviance,score2$deviance,score3$deviance,score12$deviance,score13$deviance,score23$deviance,score123$deviance), AIC = c(score1$AIC,score2$AIC,score3$AIC,score12$AIC,score13$AIC,score23$AIC,score123$AIC)),caption = "Sentiment Score Evaluation - Review Level")
+```
+
+
+##### Aggregated on Business and Weekly Level (Review Text)
+###### Overview by scatterplots
+```{r}
+review_DD3 <- review_DD2[,c("business_id","year_week","stars","score1","score2","score3")]
+setDT(review_DD3)
+review_bizweek <- review_DD3[, c("avg_score1","avg_score2","avg_score3","avg_star"):=list(mean(score1),mean(score2),mean(score3),mean(stars)), by = c("business_id", "year_week")]
+
+summary(review_bizweek)
+```
+
+```{r,echo = FALSE}
+plot0 <- ggplot(data = review_bizweek, mapping = aes(x = avg_star, y = avg_score1))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Review: Weekly Sentiment Score 1 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 1") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+
+plot0 <- ggplot(data = review_bizweek, mapping = aes(x = avg_star, y = avg_score2))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Review: Weekly Sentiment Score 2 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 2") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+
+plot0 <- ggplot(data = review_bizweek, mapping = aes(x = avg_star, y = avg_score3))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Review: Weekly Sentiment Score 3 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 3") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+```
+
+###### OLS to evaluate the relevance of Score1 Score2 and Score3 with Review Raitngs on weekly average basis
+```{r}
+score1b <- lm(avg_star ~ avg_score1, data = review_bizweek)
+score2b <- lm(avg_star ~ avg_score2, data = review_bizweek)
+score3b <- lm(avg_star ~ avg_score3, data = review_bizweek)
+score12b <- lm(avg_star ~ avg_score1 + avg_score2, data = review_bizweek)
+score13b <- lm(avg_star ~ avg_score1 + avg_score3, data = review_bizweek)
+score23b <- lm(avg_star ~ avg_score2 + avg_score3, data = review_bizweek)
+score123b <- lm(avg_star ~ avg_score1 + avg_score2 + avg_score3, data = review_bizweek)
+```
+
+```{r, results='asis'}
+stargazer::stargazer(score1b, score2b, score3b, score12b,score13b,score23b,score123b,title = "Results Comparison", out = "Results Comparison (DD).html", type = "html", dep.var.caption = "Review Stars", dep.var.labels.include = FALSE, column.labels = c("1","2","3","1&2","1&3","2&3","1,2&3"),model.numbers = FALSE)
+```
+
+##### Aggregated on Business and Weekly Level (Tip Text)
+###### Overview by scatterplots
+```{r}
+tip_byweek <- review_DD[,c("business_id","year_week","stars")]
+tip_byweek <- merge(tip_byweek, tip_DD2, by = c("business_id","year_week"))
+
+setDT(tip_byweek)
+tip_byweek <- tip_byweek[, c("avg_score1","avg_score2","avg_score3","avg_star"):=list(mean(score1),mean(score2),mean(score3),mean(stars)), by = c("business_id", "year_week")]
+summary(tip_byweek)
+```
+
+```{r,echo=FALSE}
+plot0 <- ggplot(data = tip_byweek, mapping = aes(x = avg_star, y = avg_score1))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Tip: Weekly Sentiment Score 1 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 1") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+
+plot0 <- ggplot(data = tip_byweek, mapping = aes(x = avg_star, y = avg_score2))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Tip: Weekly Sentiment Score 2 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 2") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+
+plot0 <- ggplot(data = tip_byweek, mapping = aes(x = avg_star, y = avg_score3))
+plot1 <- plot0 + geom_point(alpha = 0.3,colour = "skyblue2") + labs(title  = "Tip: Weekly Sentiment Score 3 vs Average Stars") + labs(x  = "Weekly Average Review Star", y = "Sentiment Score 3") + scale_fill_discrete(name = "Review Star") + theme_bw() + stat_smooth(colour = "violetred2")
+plot1
+```
+
+###### OLS to evaluate the relevance of Score1 Score2 and Score3 with Review Raitngs on weekly average basis
+```{r}
+score1b <- lm(avg_star ~ avg_score1, data = tip_byweek)
+score2b <- lm(avg_star ~ avg_score2, data = tip_byweek)
+score3b <- lm(avg_star ~ avg_score3, data = tip_byweek)
+score12b <- lm(avg_star ~ avg_score1 + avg_score2, data = tip_byweek)
+score13b <- lm(avg_star ~ avg_score1 + avg_score3, data = tip_byweek)
+score23b <- lm(avg_star ~ avg_score2 + avg_score3, data = tip_byweek)
+score123b <- lm(avg_star ~ avg_score1 + avg_score2 + avg_score3, data = tip_byweek)
+```
+
+```{r, results='asis'}
+stargazer::stargazer(score1b, score2b, score3b, score12b,score13b,score23b,score123b,title = "Results Comparison - Tip", out = "Results Comparison_Tip (DD).html", type = "html", dep.var.caption = "Review Stars", dep.var.labels.include = FALSE, column.labels = c("1","2","3","1&2","1&3","2&3","1,2&3"),model.numbers = FALSE)
+```
+
+

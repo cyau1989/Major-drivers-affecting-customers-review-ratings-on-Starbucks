@@ -1,0 +1,613 @@
+---
+title: "DMT Final Project - Exploratory Data Analysis and Visuals"
+author: "Group 8"
+date: "23 April, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+options(width=120)
+knitr::opts_chunk$set(comment = "", warning = FALSE, message = FALSE, echo = FALSE, tidy = TRUE, size="small",progress = FALSE)
+
+library(knitr)
+library(data.table)
+library(plyr)
+library(stringr)
+library(tm)
+library(SnowballC)
+library(RColorBrewer)
+library(wordcloud)
+library(ggplot2)
+library(scales)
+library(ggmap)
+library(sqldf)
+Sys.setenv(JAVA_HOME='C:\\Program Files\\Java\\jre1.8.0_131')
+library(rJava)
+library(RWeka)
+setwd("C:/Users/Lu/OneDrive/MSBA/Term 2/DMT/Final Project")
+```
+
+
+```{r}
+# Loading Data
+data <- load("yelp_DD.Rdata")
+
+review_Starbucks <- merge(review_Starbucks, business_Starbucks[,c("business_id","name","city","state","longitude","latitude")],by = "business_id")
+review_DD <- merge(review_DD, business_DD[,c("business_id","name","city","state","longitude","latitude")],by = "business_id")
+review_bind <- rbind(review_Starbucks, review_DD)
+```
+
+## Overview on All Reviews
+
+Total numbers of review : **`r length(unique(review_recent2year$review_id))`**  
+Total numbers of business : **`r length(unique(review_recent2year$business_id))`**  
+
+```{r}
+plot0 <- ggplot(data = review_recent2year, aes(x = stars,group = year(date)))
+plot1 <- plot0 + geom_bar(aes(y = ..prop.., fill = factor(..x..)), show.legend = F,stat = "count") + geom_text(aes(label = scales::percent(..prop..),y= ..prop..), stat= "count", vjust = -.5) +
+labs(title  = "All: Distribution of Review Stars by Year") + labs(x  = "Review Star", y = "Percetage") + theme_bw() + scale_fill_brewer(palette =   "RdYlGn")+ facet_grid(~year(review_recent2year$date)) + scale_y_continuous(labels=scales::percent)
+plot1
+
+summary(review_recent2year[,c("date","stars")])
+
+```
+
+Standard deviation on review star: **`r sd(review_recent2year$stars)`**
+
+### Starbucks
+
+Total numbers of review: **`r length(review_Starbucks$review_id)`**
+Total numbers of stores: **`r length(unique(review_Starbucks$business_id))`**
+Numbers of cities covered: **`r length(unique(review_Starbucks$city))`**
+```{r}
+plot0 <- ggplot(data = review_Starbucks, aes(x = stars,group = year(date)))
+plot1 <- plot0 + geom_bar(aes(y = ..prop.., fill = factor(..x..)), show.legend = F,stat = "count") + geom_text(aes(label = scales::percent(..prop..),y= ..prop..), stat= "count", vjust = -.5) +
+labs(title  = "Starbucks: Distribution of Review Stars by Year") + labs(x  = "Review Star", y = "Percetage") + theme_bw() + scale_fill_brewer(palette =   "RdYlGn")+ facet_grid(~year(review_Starbucks$date)) + scale_y_continuous(labels=scales::percent)
+plot1
+
+# Summary statsitics on review ratings
+summary(review_Starbucks[,c("date","stars")])
+
+```
+
+Standard deviation on review star: **`r sd(review_Starbucks$stars)`**
+
+#### By Year
+```{r, results='asis'}
+byyear <- review_Starbucks[,c("date","stars")]
+byyear$year <- year(byyear$date)
+setDT(byyear)
+byyear <- byyear[, c("Numbers of Reviews","Average Review Stars"):=list(.N,round(mean(stars),2)), by = c("year")]
+setDF(byyear)
+table0 <- unique(byyear[,-c(1:2)])
+
+kable(x = table0,caption = "Starbucks: Average Review Stars by Year",row.names = F)
+```
+
+#### By State
+```{r, results='asis'}
+bystate <- review_Starbucks[,c("state","stars")]
+setDT(bystate)
+bystate <- bystate[, c("Numbers of Reviews","Average Review Stars"):=list(.N,round(mean(stars),2)), by = c("state")]
+setDF(bystate)
+table1 <- unique(bystate[,-2])
+setDT(table1)
+table1 <- table1[order(table1$`Average Review Stars`, decreasing = T),]
+
+kable(x = table1,caption = "Starbucks: Average Review Stars by State",row.names = F)
+```
+
+```{r}
+state <- sqldf("select state, count (review_id) from review_Starbucks group by state order by count(review_id)")
+positions <- state$state
+
+plot0 <- ggplot(data = table1, aes(x = state, y = `Numbers of Reviews`, fill = `Average Review Stars`))
+plot1 <- plot0 + geom_col(alpha = 0.8) + labs(title  = "Starbucks: Distribution of Review Stars by State") + labs(x  = "State", y = "Numbers of Reviews") + theme_bw() + coord_flip() + scale_x_discrete(limits = positions)  + scale_fill_distiller(palette =   "RdYlGn",name = "Average Review Star",direction = 1) + geom_text(aes(label = `Average Review Stars`),hjust = -.3)
+plot1
+
+```
+
+#### By City
+```{r, results='asis'}
+city <- sqldf("select city, count (review_id) from review_Starbucks group by city order by count(review_id) DESC LIMIT 10")
+
+positions <- rev(city$city)
+
+bycity <- review_Starbucks[which(review_Starbucks$city %in% city$city),c("city","stars")]
+setDT(bycity)
+bycity <- bycity[, c("Numbers of Reviews","Average Review Stars"):=list(.N, round(mean(stars),2)), by = c("city")]
+setDF(bycity)
+table2 <- unique(bycity[,-2])
+setDT(table2)
+table2 <- table2[order(table2$`Average Review Stars`, decreasing = T),]
+kable(x = table2,caption = "Average Review Stars by City (Top 10)",row.names = F)
+```
+
+
+```{r}
+plot0 <- ggplot(data = table2, aes(x = city, y = `Numbers of Reviews`, fill = `Average Review Stars`))
+plot1 <- plot0 + geom_col(alpha = 0.8) + labs(title  = "Starbucks: Distribution of Review Stars by City") + labs(x  = "City", y = "Numbers of Reviews") + theme_bw() + scale_fill_distiller(palette =   "RdYlGn",name = "Review Star", direction = 1)+coord_flip() + scale_x_discrete(limits = positions) + geom_text(aes(label = `Average Review Stars`),hjust = -.1)
+plot1
+```
+
+
+#####`r city$city[1]`
+% of Reviews Contributed: **`r length(review_Starbucks[which(review_Starbucks$city == city$city[1]),"review_id"])/length(review_Starbucks$review_id)`**  
+
+Numbers of Stores: **`r length(business_Starbucks[which(business_Starbucks$city == city$city[1]),"business_id"])`**  
+
+```{r}
+map1 <- get_map(location=city$city[1],zoom=11,maptype = "toner",messaging = F)
+
+plot1 <- ggmap(map1, extent = "device") + geom_point(data = review_bind[review_bind$name %in% c("Starbucks","Dunkin' Donuts"),], aes(x = longitude, y = latitude, colour = as.factor(stars),shape = name), size = 4) + scale_color_brewer(palette =   "RdYlGn",name = "Review Star") + labs(title  = city$city[1]) + scale_shape_manual(values = c(8,18),name = "Franchise")
+plot1
+```
+
+#####`r city$city[2]`
+% of Reviews Contributed: **`r length(review_Starbucks[which(review_Starbucks$city == city$city[2]),"review_id"])/length(review_Starbucks$review_id)`**  
+
+Numbers of Stores: **`r length(business_Starbucks[which(business_Starbucks$city == city$city[2]),"business_id"])`**  
+
+```{r}
+map2 <- get_map(location=city$city[2],zoom=11,maptype = "toner",messaging = F)
+plot2 <- ggmap(map2, extent = "device") + geom_point(data = review_bind[review_bind$name %in% c("Starbucks","Dunkin' Donuts"),], aes(x = longitude, y = latitude, colour = as.factor(stars),shape = name), size = 4) + scale_color_brewer(palette =   "RdYlGn",name = "Review Star") + labs(title  = city$city[2]) + scale_shape_manual(values = c(8,18),name = "Franchise")
+plot2
+```
+
+#####`r city$city[3]`
+% of Reviews Contributed: **`r length(review_Starbucks[which(review_Starbucks$city == city$city[3]),"review_id"])/length(review_Starbucks$review_id)`**  
+
+Numbers of Stores: **`r length(business_Starbucks[which(business_Starbucks$city == city$city[3]),"business_id"])`**  
+
+```{r,echo=TRUE}
+#Subset of Las Vegas and Phoenix
+subset1 <- subset(review_Starbucks, (review_Starbucks$city %in% c("Las Vegas","Phoenix")))
+length(subset1$review_id)
+summary(subset1[,c("date","stars")])
+sd(subset1$stars)
+
+#Subset excluding Las Vegas and Phoenix
+subset2 <- subset(review_Starbucks, !(review_Starbucks$city %in% c("Las Vegas","Phoenix")))
+length(subset2$review_id)
+summary(subset2[,c("date","stars")])
+sd(subset2$stars)
+```
+
+
+### Overview on Dunkin Donuts' Reviews
+
+Total numbers of review: **`r length(review_DD$review_id)`**  
+Total numbers of stores: **`r length(unique(review_DD$business_id))`**  
+Numbers of cities covered: **`r length(unique(review_DD$city))`**  
+```{r}
+plot0 <- ggplot(data = review_DD, aes(x = stars,group = year(date)))
+plot1 <- plot0 + geom_bar(aes(y = ..prop.., fill = factor(..x..)), show.legend = F,stat = "count") + geom_text(aes(label = scales::percent(..prop..),y= ..prop..), stat= "count", vjust = -.5) +
+labs(title  = "Dunkin' Donuts: Distribution of Review Stars by Year") + labs(x  = "Review Star", y = "Percetage") + theme_bw() + scale_fill_brewer(palette =   "RdYlGn")+ facet_grid(~year(review_DD$date)) + scale_y_continuous(labels=scales::percent)
+plot1
+
+
+# Summary statsitics on review ratings
+summary(review_DD[,c("date","stars")])
+```
+
+Standard Deviation is **`r sd(review_DD$stars)`**
+
+#### By Year
+```{r, results='asis'}
+byyear <- review_DD[,c("date","stars")]
+byyear$year <- year(byyear$date)
+setDT(byyear)
+byyear <- byyear[, c("Numbers of Reviews","Average Review Stars"):=list(.N,round(mean(stars),2)), by = c("year")]
+setDF(byyear)
+table0 <- unique(byyear[,-c(1:2)])
+
+kable(x = table0,caption = "Dunkin' Donuts: Average Review Stars by Year",row.names = F)
+```
+
+#### By State
+```{r, results='asis'}
+bystate <- review_DD[,c("state","stars")]
+setDT(bystate)
+bystate <- bystate[, c("Numbers of Reviews","Average Review Stars"):=list(.N,round(mean(stars),2)), by = c("state")]
+setDF(bystate)
+table1 <- unique(bystate[,-2])
+setDT(table1)
+table1 <- table1[order(table1$`Average Review Stars`,decreasing = T),]
+kable(x = table1,caption = "Dunkin' Donuts: Average Review Stars by State",row.names = F)
+```
+
+```{r}
+state <- sqldf("select state, count (review_id) from review_DD group by state order by count(review_id)")
+positions <- state$state
+
+plot0 <- ggplot(data = table1, aes(x = state, y = `Numbers of Reviews`, fill = `Average Review Stars`))
+plot1 <- plot0 + geom_col(alpha = 0.8) + labs(title  = "Dunkin' Donuts: Distribution of Review Stars by State") + labs(x  = "State", y = "Numbers of Reviews") + theme_bw() + scale_fill_distiller(palette =   "RdYlGn",name = "Review Star", direction = 1)+coord_flip() + scale_x_discrete(limits = positions) + geom_text(aes(label = `Average Review Stars`),hjust = -.3)
+plot1
+
+```
+
+#### By City
+```{r, results='asis'}
+city <- sqldf("select city, count (review_id) from review_DD group by city order by count(review_id) DESC LIMIT 10")
+
+positions <- rev(city$city)
+
+bycity <- review_DD[which(review_DD$city %in% city$city),c("city","stars")]
+setDT(bycity)
+bycity <- bycity[, c("Numbers of Reviews","Average Review Stars"):=list(.N, round(mean(stars),2)), by = c("city")]
+setDF(bycity)
+table2 <- unique(bycity[,-2])
+setDT(table2)
+table2 <- table2[order(table2$`Average Review Stars`, decreasing = T),]
+kable(x = table2,caption = "Dunkin' Donuts: Average Review Stars by City (Top 10)",row.names = F)
+```
+
+```{r}
+plot0 <- ggplot(data = table2, aes(x = city, y = `Numbers of Reviews`, fill = `Average Review Stars`))
+plot1 <- plot0 + geom_col(alpha = 0.8) + labs(title  = "Dunkin' Donuts: Distribution of Review Stars by City") + labs(x  = "City", y = "Numbers of Reviews") + theme_bw() + scale_fill_distiller(palette =   "RdYlGn",name = "Review Star", direction = 1)+coord_flip() + scale_x_discrete(limits = positions) + geom_text(aes(label = `Average Review Stars`),hjust = -.3)
+plot1
+```
+
+
+#####`r city$city[1]`
+% of Reviews Contributed: **`r length(review_DD[which(review_DD$city == city$city[1]),"review_id"])/length(review_DD$review_id)`**  
+
+Numbers of Stores: **`r length(business_DD[which(business_DD$city == city$city[1]),"business_id"])`**  
+
+#####`r city$city[2]`
+% of Reviews Contributed: **`r length(review_DD[which(review_DD$city == city$city[2]),"review_id"])/length(review_DD$review_id)`**  
+
+Numbers of Stores: **`r length(business_DD[which(business_DD$city == city$city[2]),"business_id"])`**  
+
+#####`r city$city[3]`
+% of Reviews Contributed: **`r length(review_DD[which(review_DD$city == city$city[3]),"review_id"])/length(review_DD$review_id)`**  
+
+Numbers of Stores: **`r length(business_DD[which(business_DD$city == city$city[3]),"business_id"])`**  
+
+```{r,echo=TRUE}
+#Subset of Las Vegas and Phoenix
+subset1 <- subset(review_DD, (review_DD$city %in% c("Las Vegas","Phoenix")))
+length(subset1$review_id)
+summary(subset1[,c("date","stars")])
+sd(subset1$stars)
+
+#Subset excluding Las Vegas and Phoenix
+subset2 <- subset(review_DD, !(review_DD$city %in% c("Las Vegas","Phoenix")))
+length(subset2$review_id)
+summary(subset2[,c("date","stars")])
+sd(subset2$stars)
+```
+
+## wORD Cloud on Starbucks
+### on 5-Star Review
+```{r}
+review_text <- VCorpus(VectorSource(review_Starbucks[which(review_Starbucks$stars == 5), "text"]))
+
+# Remove numbers
+review_text <- tm_map(review_text, removeNumbers)
+
+# Remove punctuations
+review_text <- tm_map(review_text, removePunctuation)
+
+# Convert the text to lower case
+review_text <- tm_map(review_text, content_transformer(stringi::stri_trans_tolower))
+
+# Eliminate extra white spaces
+review_text <- tm_map(review_text, stripWhitespace)
+
+# Remove english common stopwords
+review_text <- tm_map(review_text, removeWords, stopwords("english"))
+
+# Remove own stopwords
+ownstopwords <- c("the","they","got","its","this","will","make","take","can","get","place","also","even","made","came","use","place","just","food","starbucks")
+                  
+review_text <- tm_map(review_text, removeWords, ownstopwords)
+
+# Text stemming
+review_text <- tm_map(review_text, stemDocument)
+```
+
+#### Unigram
+```{r}
+# Build term-document matrix
+dtm <- TermDocumentMatrix(review_text)
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 2,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Unigrams") + ylab("Frequency") + ggtitle("Unigrams: Most frequent Words on Starbucks' 5-star Review") + scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+```
+
+#### Bigram
+```{r}
+#Use Weka's n-gram tokenizer to create a TDM that uses as terms the bigrams that appear in the corpus.
+BigramTokenizer <- function(x) {RWeka::NGramTokenizer(x, RWeka::Weka_control(min = 2, max = 2))}
+dtm <- TermDocumentMatrix(review_text, control = list(tokenize = BigramTokenizer))
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 2,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Bigrams") + ylab("Frequency") +
+  ggtitle("Bigrams: Most frequent Words on Starbucks' 5-star Review") +scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+```
+
+#### Trigram
+```{r}
+TrigramTokenizer <- function(x) {RWeka::NGramTokenizer(x, RWeka::Weka_control(min = 3, max = 3))}
+dtm <- TermDocumentMatrix(review_text, control = list(tokenize = TrigramTokenizer))
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 2,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Trigrams") + ylab("Frequency") +
+  ggtitle("Trigrams: Most frequent Words on Starbucks' 5-star Review") +scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+```
+
+### on 1-Star Review
+```{r}
+review_text <- VCorpus(VectorSource(review_Starbucks[which(review_Starbucks$stars == 1), "text"]))
+
+# Remove numbers
+review_text <- tm_map(review_text, removeNumbers)
+
+# Remove punctuations
+review_text <- tm_map(review_text, removePunctuation)
+
+# Convert the text to lower case
+review_text <- tm_map(review_text, content_transformer(stringi::stri_trans_tolower))
+
+# Eliminate extra white spaces
+review_text <- tm_map(review_text, stripWhitespace)
+
+# Remove english common stopwords
+review_text <- tm_map(review_text, removeWords, stopwords("english"))
+
+# Remove own stopwords
+review_text <- tm_map(review_text, removeWords, ownstopwords)
+
+# Text stemming
+review_text <- tm_map(review_text, stemDocument)
+```
+
+#### Unigrams
+```{r}
+# Build term-document matrix
+dtm <- TermDocumentMatrix(review_text)
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 2,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Unigrams") + ylab("Frequency") +
+  ggtitle("Unigrams: Most frequent Words on Starbucks' 1-star Review") +scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+
+```
+
+
+#### Bigram
+```{r}
+#Use Weka's n-gram tokenizer to create a TDM that uses as terms the bigrams that appear in the corpus.
+dtm <- TermDocumentMatrix(review_text, control = list(tokenize = BigramTokenizer))
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 2,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Bigrams") + ylab("Frequency") +
+  ggtitle("Bigrams: Most frequent Words on Starbucks' 1-star Review") +scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+```
+
+
+#### Trigram
+```{r}
+dtm <- TermDocumentMatrix(review_text, control = list(tokenize = TrigramTokenizer))
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 2,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Trigrams") + ylab("Frequency") +
+  ggtitle("Trigrams: Most frequent Words on Starbucks' 1-star Review") +scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+```
+
+
+### Tip Text: Select 2 sets of retaurants: High Performing (4-Stars or above) and Low Performing(2-Stars or below)
+```{r,echo=TRUE}
+# Select all the 5-star Restaurants
+biz_5star <- business_Starbucks[which(business_Starbucks$stars >= 4),]
+biz_5star_id <- biz_5star$business_id
+
+# Select the most popular restaurants by review count
+biz_2star <- business_Starbucks[which(business_Starbucks$stars <= 2),]
+biz_2star_id <- biz_2star$business_id
+```
+
+
+#### High-Performing Restaurants
+##### Bigram
+```{r}
+tip_text <- VCorpus(VectorSource(tip_Starbucks[which(tip_Starbucks$business_id %in% biz_5star_id), "text"]))
+
+# Remove numbers
+tip_text <- tm_map(tip_text, removeNumbers)
+
+# Remove punctuations
+tip_text <- tm_map(tip_text, removePunctuation)
+
+# Convert the text to lower case
+tip_text <- tm_map(tip_text, content_transformer(stringi::stri_trans_tolower))
+
+# Eliminate extra white spaces
+tip_text <- tm_map(tip_text, stripWhitespace)
+
+# Remove english common stopwords
+tip_text <- tm_map(tip_text, removeWords, stopwords("english"))
+
+# Remove own stopwords
+tip_text <- tm_map(tip_text, removeWords, ownstopwords)
+
+# Text stemming
+tip_text <- tm_map(tip_text, stemDocument)
+
+
+# Build term-document matrix
+dtm <- TermDocumentMatrix(tip_text, control = list(tokenize = BigramTokenizer))
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq,min.freq = 2,
+          max.words = 100, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Bigrams") + ylab("Frequency") +
+  ggtitle("Bigrams: Most frequent Words on Starbucks' High-Performing Stores") +scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+```
+
+##### Trigram
+```{r}
+# Build term-document matrix
+dtm <- TermDocumentMatrix(tip_text, control = list(tokenize = TrigramTokenizer))
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq,min.freq = 2,
+          max.words = 100, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Trigrams") + ylab("Frequency") +
+  ggtitle("Trigrams: Most frequent Words on Starbucks' High-Performing Stores") +scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+```
+
+
+#### Low-Performing Restaurants
+```{r}
+tip_text <- VCorpus(VectorSource(tip_Starbucks[which(tip_Starbucks$business_id %in% biz_2star_id), "text"]))
+
+# Remove numbers
+tip_text <- tm_map(tip_text, removeNumbers)
+
+# Remove punctuations
+tip_text <- tm_map(tip_text, removePunctuation)
+
+# Convert the text to lower case
+tip_text <- tm_map(tip_text, content_transformer(stringi::stri_trans_tolower))
+
+# Eliminate extra white spaces
+tip_text <- tm_map(tip_text, stripWhitespace)
+
+# Remove english common stopwords
+tip_text <- tm_map(tip_text, removeWords, stopwords("english"))
+
+# Remove own stopwords
+tip_text <- tm_map(tip_text, removeWords, ownstopwords)
+
+# Text stemming
+tip_text <- tm_map(tip_text, stemDocument)
+
+
+# Build term-document matrix
+dtm <- TermDocumentMatrix(tip_text, control = list(tokenize = BigramTokenizer))
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq, min.freq = 2,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Bigrams") + ylab("Frequency") +
+  ggtitle("Bigrams: Most frequent Words on Starbucks' Low-Performing Stores") +scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+```
+
+##### Trigram
+```{r}
+# Build term-document matrix
+dtm <- TermDocumentMatrix(tip_text, control = list(tokenize = TrigramTokenizer))
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing=TRUE)
+d <- data.frame(word = names(v),freq=v)
+head(d, 10)
+
+# Geenerate the Word Cloud
+set.seed(1234)
+wordcloud(words = d$word, freq = d$freq,min.freq = 2,
+          max.words = 100, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+
+ggplot(head(d,10), aes(reorder(word,freq), freq)) +
+  geom_bar(stat = "identity",aes(fill = freq)) + coord_flip() +
+  xlab("Trigrams") + ylab("Frequency") +
+  ggtitle("Trigrams: Most frequent Words on Starbucks' Low-Performing Stores") +scale_fill_distiller(palette = 3,direction = 1) + theme_bw()
+```
+

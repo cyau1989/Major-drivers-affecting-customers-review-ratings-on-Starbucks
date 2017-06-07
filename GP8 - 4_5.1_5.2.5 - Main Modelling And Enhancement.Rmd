@@ -1,0 +1,385 @@
+---
+title: "DMT Final Project - Data Modelling"
+author: "Lu HE"
+date: "27 March, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+options(width=120)
+knitr::opts_chunk$set(comment = "", warning = FALSE, message = FALSE, echo = TRUE, tidy = TRUE, size="small",progress = FALSE)
+
+#install.packages("plm")
+library(knitr)
+library(data.table)
+library(plyr)
+library(stringr)
+library(stargazer)
+library(MASS)
+library(rpart)
+library(rpart.plot)
+library(glmnet)
+library(randomForest)
+library(plm)
+library(e1071)
+library("ISLR")
+library("ggplot2")
+### Boosting
+library("gbm")
+#setwd("C:/Users/ACER/Desktop/Topic Modelling/Data")
+
+#load filtered data from Yelp Dataset.
+business1 <- readRDS("business1.rds")
+review1 <- readRDS("review1.rds")
+user1 <- readRDS("user1.rds")
+
+#K means clustering on user profile, refer to section 5.2.4
+
+#look at user profile, remove those string such as user_id, name and elit,date
+user_profile <- user1[-c(1,8,19)]
+#summary(user_profile)
+
+#regroup the column names so that User_id can be joined back later
+user_profile <- user_profile[c("user_id","U_useful","U_compliment_photos","U_compliment_list","U_compliment_funny","U_compliment_plain","U_review_count", "U_fans", "U_compliment_note", "U_funny","U_compliment_writer","U_compliment_cute","U_average_stars","U_compliment_more","U_compliment_hot","U_cool","U_compliment_profile","U_compliment_cool")]
+
+
+#split the data for PCA
+x <- user_profile[-13]
+y <- user_profile[13] #take out average stars 
+
+
+#normalize x
+x.df <- data.frame(x)
+x.scale <- x.df
+
+#scale the numberical column by value/max(value) so that the data is scaled to [0.1]
+for (j in 2:16){
+  for (i in 1: nrow(x.df)){
+    x.scale[i,j] <- x.scale[i,j]/max(x.df[j])
+  }
+  
+}
+
+
+  for (i in 1: nrow(x.df)){
+    x.scale[i,17] <- x.scale[i,17]/max(x.df[17])
+  }
+  
+
+
+summary(x.scale)
+
+## run PCA on user profile
+x.pca <- prcomp(x.scale[-1])
+x.pca
+summary(x.pca)
+x.pca$rotation  # loadings of each PC
+
+plot(x.pca)
+
+# proportion of variance explained
+x.pca$sdev
+plot(x.pca$sdev^2 / sum(x.pca$sdev^2), type="b", ylim=c(0,1))
+
+# cumulative proportion of variance explained
+plot(cumsum(x.pca$sdev^2) / sum(x.pca$sdev^2), type="b", ylim=c(0,1))
+
+
+# multiple runs
+set.seed(333)
+km <- kmeans(x=x[-1], centers=5, nstart=20)
+km.scale <- kmeans(x=x.scale[-1], centers=5, nstart=20)
+
+
+# plot the K-means cluster result
+user_profile$km.cluster <- km$cluster
+user_profile$kmscale.cluster <- km.scale$cluster
+table(user_profile$kmscale.cluster)
+table(user_profile$km.cluster)
+table(as.integer(user_profile$U_average_stars))
+
+
+#summary(user_profile)
+
+```
+
+##Prepare for main model
+```{r}
+
+df <- merge(x = review1, y = user1, by="user_id")
+df <- merge(df, business1, by = "business_id")
+colnames(df)
+df$R_LDA_topic <- as.factor(df$R_LDA_topic)
+df$R_Bad_Service <- as.factor(df$R_Bad_Service)
+df$R_Bad_Food <- as.factor(df$R_Bad_Food)
+df$R_Bad_Ambience <- as.factor(df$R_Bad_Ambience)
+df$R_Bad_Facility <- as.factor(df$R_Bad_Facility)
+df$R_Bad_Value <- as.factor(df$R_Bad_Value)
+
+
+
+```
+
+## OLS method on main model
+```{r}
+#main model include all relevant and derived variables
+mod.lm.all <- lm(stars ~  score1 + score1_very.pos + score1_very.neg + score2 + score2_very.pos + score2_very.neg + score3 + score3_very.pos + score3_very.neg + R_LDA_topic + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df)
+
+#feature selection
+mod.lm.aic <- stepAIC(mod.lm.all, direction = "backward", trace=FALSE)
+#summary(mod.lm.aic)
+
+mod.lm1 <- lm(stars ~  score1 + score1_very.pos + score1_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df)
+
+mod.lm2 <- lm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df)
+
+mod.lm3 <- lm(stars ~  score3 + score3_very.pos + score3_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df)
+
+mod.lm4 <- lm(stars ~  score1 + score1_very.pos + score1_very.neg + R_LDA_topic  + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df)
+
+mod.lm5 <- lm(stars ~  score2 + score2_very.pos + score2_very.neg + R_LDA_topic  + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df)
+
+mod.lm6 <- lm(stars ~  score3 + score3_very.pos + score3_very.neg + R_LDA_topic  + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df)
+
+```
+
+```{r, results='asis'}
+#generare OLS comparison table as a HTML
+stargazer::stargazer(mod.lm.all, mod.lm.aic, mod.lm1, mod.lm2,mod.lm3,mod.lm4,mod.lm5,mod.lm6,title = "OLS - Results Comparison", out = "OLS - Results Comparison.html", type = "html", dep.var.caption = "Models Evalation", dep.var.labels.include = FALSE,model.numbers = T)
+```
+
+
+## PLM, refer to section 4
+```{r}
+#main model on PLM with location clustering as index
+
+#Firstly, using fixed effect :model = within 
+mod.plm.all <- plm(stars ~  score1 + score1_very.pos + score1_very.neg + score2 + score2_very.pos + score2_very.neg + score3 + score3_very.pos + score3_very.neg + R_LDA_topic + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob+ R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "within", data = df)
+
+#compared with random effect :model = random
+mod.plm.2 <- plm(stars ~  score1 + score1_very.pos + score1_very.neg + score2 + score2_very.pos + score2_very.neg + score3 + score3_very.pos + score3_very.neg + R_LDA_topic + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value+ U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random",data = df)
+
+#hausman test to determine which effect should be chosen
+
+phtest(mod.plm.all,mod.plm.2)
+#Since p-value is 0.3757 > 0.05, so we use random effect model
+
+mod.plm.3 <- plm(stars ~  score1 + score1_very.pos + score1_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random",data = df)
+
+mod.plm.4 <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random", data = df)
+
+mod.plm.5 <- plm(stars ~  score3 + score3_very.pos + score3_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value +  U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random",data = df)
+
+mod.plm.6 <- plm(stars ~  score1 + score1_very.pos + score1_very.neg + R_LDA_topic + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random",data = df)
+
+mod.plm.7 <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_LDA_topic + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random", data = df)
+
+mod.plm.8 <- plm(stars ~  score3 + score3_very.pos + score3_very.neg + R_LDA_topic + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random",data = df)
+
+
+```
+
+```{r, results='asis'}
+#comparison of PLM models in HTML
+stargazer::stargazer(mod.plm.all, mod.plm.2, mod.plm.3,mod.plm.4,mod.plm.5,mod.plm.6,mod.plm.7,mod.plm.8,title = "PLM - Results Comparison", out = "PLM - Results Comparison.html", type = "html", dep.var.caption = "Models Evalation", dep.var.labels.include = FALSE,model.numbers = T)
+```
+
+## Rpart Decision tree for better interpretation
+
+
+```{r}
+mod.rpart <- rpart(stars ~  score2 + score2_very.pos + score2_very.neg + R_LDA_topic + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust,data = df)
+summary(mod.rpart)
+rpart.plot(mod.rpart)
+
+mod.rpart$variable.importance
+```
+
+## Random Forest to check consistency
+```{r}
+set.seed(1234)
+
+
+mod.rf <- randomForest(stars ~  score2 + score2_very.pos + score2_very.neg + R_LDA_topic + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data=df,importance = T,na.action = na.omit)  # default mtry=n/3 for regression
+
+mean(mod.rf$mse)
+plot(mod.rf)
+
+
+#variable importance
+importance(mod.rf)  
+varImpPlot(mod.rf)
+
+
+
+
+
+# fit a boosting model
+set.seed(1234)
+mod.gbm <- gbm(stars ~  score2 + score2_very.pos + score2_very.neg + R_LDA_topic + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data=df, distribution="gaussian", n.trees=5000, shrinkage=0.001, interaction.depth=4)
+
+mse.gbm <- mean((mod.gbm$fit - df$stars)^2)
+mse.gbm
+
+# inspect a particular tree
+pretty.gbm.tree(mod.gbm, i.tree=2)
+
+# plot training error
+gbm.perf(mod.gbm)
+
+
+
+
+```
+
+
+# Main model enhancement, refer to section 5.1
+#Handling Missing values
+
+#Score2 has missing value
+```{r}
+summary(review1)
+```
+
+# Method 1: Impute by 0
+```{r}
+na.zero <- function (x) {
+    x[is.na(x)] <- 0
+    return(x)
+}
+
+df_1 <- df
+df_1$score2 <- na.zero(df_1$score2)
+df_1$score2_very.pos <- na.zero(df_1$score2_very.pos)
+df_1$score2_very.neg <- na.zero(df_1$score2_very.neg)
+
+```
+
+#Method 2: Impute by yearly average
+```{r}
+df_2 <- df
+
+df_2$year <- format(df_2$date,"%Y")
+df_2$month <- format(df_2$date,"%m")
+df_2$day <- format(df_2$date,"%d")
+
+for (i in 1:nrow(df_2))
+ {
+  df_2$score2[i] <- ifelse(is.na(df_2$score2[i]),mean(na.omit(df_2[which(df_2$year == df_2[i,"year"]),"score2"])),df_2$score2[i])
+}
+
+df_2$score2_very.pos <- as.factor(ifelse(df_2$score2 >= quantile(df_2$score2, 0.75), "1", "0"))
+df_2$score2_very.neg <- as.factor(ifelse(df_2$score2 >= quantile(df_2$score2, 0.25), "1", "0"))
+
+```
+
+#Method 3: Impute by monthly average
+```{r}
+df_3 <- df
+
+df_3$year <- format(df_3$date,"%Y")
+df_3$month <- format(df_3$date,"%m")
+df_3$day <- format(df_3$date,"%d")
+
+for (i in 1:nrow(df_3))
+ {
+  df_3$score2[i] <- ifelse(is.na(df_3$score2[i]),mean(na.omit(df_3[which(df_3$month == df_3[i,"month"]),"score2"])),df_3$score2[i])
+}
+
+
+df_3$score2_very.pos <- as.factor(ifelse(df_3$score2 >= quantile(df_3$score2, 0.75), "1", "0"))
+df_3$score2_very.neg <- as.factor(ifelse(df_3$score2 >= quantile(df_3$score2, 0.25), "1", "0"))
+
+```
+
+#Method 4: Predict missing value using another regression tree
+```{r}
+df_4 <- df
+#for missing value of score2, regress score2 onthe other IV
+rpart_score2 <- rpart(score2 ~  score2_very.pos + score2_very.neg + R_LDA_topic + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + useful +  cool , data = df_4,method = "anova",control = rpart.control(cp = 0.0001))
+#assign value
+df_4$score2 <-ifelse(is.na(df_4$score2),predict(rpart_score2,df_4, type="vector"),df_4$score2)
+
+df_4$score2_very.pos <- as.factor(ifelse(df_4$score2 >= quantile(df_4$score2, 0.75), "1", "0"))
+df_4$score2_very.neg <- as.factor(ifelse(df_4$score2 >= quantile(df_4$score2, 0.25), "1", "0"))
+
+```
+
+#Method 5: Predict missing value using OLS
+```{r}
+df_5 <- df
+
+df_5$year <- format(df_5$date,"%Y")
+df_5$month <- format(df_5$date,"%m")
+df_5$day <- format(df_5$date,"%d")
+
+plm_score2 <- plm(score2 ~ score2_very.pos + score2_very.neg + R_LDA_topic + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + useful +  cool, data = df_5, model = "within",index = c("year"))
+
+df_5$score2 <-ifelse(is.na(df_5$score2),pmodel.response(plm_score2),df_5$score2)
+
+df_5$score2_very.pos <- as.factor(ifelse(df_5$score2 >= quantile(df_5$score2, 0.75), "1", "0"))
+df_5$score2_very.neg <- as.factor(ifelse(df_5$score2 >= quantile(df_5$score2, 0.25), "1", "0"))
+```
+
+## OLS revisit - Comparison of Imputation Methods of Score2
+## mod.lm2 is used since the R-square is the highest
+
+```{r}
+
+
+mod.lm2.imp1 <- lm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df_1)
+summary(df_1)
+
+mod.lm2.imp2 <- lm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df_2)
+
+mod.lm2.imp3 <- lm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df_3)
+
+mod.lm2.imp4 <- lm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df_4)
+
+mod.lm2.imp5 <- lm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool + B_clust, data = df_5)
+
+```
+
+```{r, results='asis'}
+stargazer::stargazer(mod.lm2.imp1, mod.lm2.imp2, mod.lm2.imp3, mod.lm2.imp4,mod.lm2.imp5,title = "Comparison of Imputation Methods of Score2 - OLS", out = "Comparison of Imputation Methods of Score2 - OLS.html", type = "html", dep.var.caption = "Evaluation of Imputation Methods of Score2 - OLS", dep.var.labels.include = FALSE,model.numbers = T)
+```
+
+## PLM revisit - Comparison of Imputation Methods of Score2
+## mod.plm.4 is used since the R-square is the highest
+
+```{r}
+mod.plm.4.imp1 <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random", data = df_1)
+
+mod.plm.4.imp2 <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random", data = df_2)
+
+
+
+mod.plm.4.imp3 <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random", data = df_3)
+
+
+mod.plm.4.imp4 <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random", data = df_4)
+
+mod.plm.4.imp5 <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful + U_fans + U_cool, index = "B_clust",effect = "individual", model = "random", data = df_5)
+```
+
+```{r, results='asis'}
+stargazer::stargazer(mod.plm.4.imp1, mod.plm.4.imp2, mod.plm.4.imp3,mod.plm.4.imp4,mod.plm.4.imp5,title = "Comparison of Imputation Methods of Score2 - PLM", out = "Comparison of Imputation Methods of Score2 - PLM.html", type = "html", dep.var.caption = "Evaluation of Imputation Methods of Score2 - PLM", dep.var.labels.include = FALSE,model.numbers = T)
+```
+
+```{r}
+#include the user clustering into the optimal model for evaluation
+df_trial <- merge(df_3, user_profile,by="user_id")
+
+mod.plm.4.imp3.avg <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful.x + U_fans.x + U_cool.x + as.integer(U_average_stars.x), index = "B_clust",effect = "individual", model = "random", data = df_trial)
+
+mod.plm.4.imp3.km <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful.x + U_fans.x + U_cool.x + km.cluster, index = "B_clust",effect = "individual", model = "random", data = df_trial)
+
+mod.plm.4.imp3.kmcluster <- plm(stars ~  score2 + score2_very.pos + score2_very.neg + R_Topic1_prob +  R_Topic2_prob + R_Topic3_prob + R_Topic4_prob + R_Topic5_prob + R_Topic6_prob + R_Topic7_prob + R_Topic8_prob + R_Topic9_prob + R_Topic10_prob + R_Bad_Service + R_Bad_Food  + R_Bad_Ambience  + R_Bad_Facility  + R_Bad_Value + U_useful.x + U_fans.x + U_cool.x + kmscale.cluster, index = "B_clust",effect = "individual", model = "random", data = df_trial)
+
+
+```
+
+```{r, results='asis'}
+stargazer::stargazer(mod.plm.4.imp3.avg, mod.plm.4.imp3.km, mod.plm.4.imp3.kmcluster, title = "Comparison of Imputation Methods of Score2 with user clustering - PLM", out = "Comparison of Imputation Methods of Score2 with user clustering- PLM.html", type = "html", dep.var.caption = "Evaluation of Imputation Methods of Score2 with user clustering - PLM", dep.var.labels.include = FALSE,model.numbers = T)
+
+```

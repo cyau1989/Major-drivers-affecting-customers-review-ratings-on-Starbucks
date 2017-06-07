@@ -1,0 +1,272 @@
+---
+title: "yelp_topic_modelling"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#start Data Preprocessing
+```{r}
+createdtm <- function(x){
+  #start preprocessing
+  #Transform to lower case
+  docs <- tm_map(docs,content_transformer(stringi::stri_trans_tolower))
+  #remove numbers
+  docs <- tm_map(docs, removeNumbers) 
+  # replace punctuation mark by space 
+  docs <- tm_map(docs, removePunctuation)
+  # remove stop words
+  docs <- tm_map(docs, removeWords, words = stopwords("en"))
+  #define and eliminate all custom stopwords
+  myStopwords <- c("can", "say","one","way","use",
+                   "also","howev","tell","will",
+                   "much","need","take","tend","even",
+                   "like","particular","rather","said",
+                   "get","well","make","ask","come","end",
+                   "first","two","help","often","may",
+                   "might","see","someth","thing","point",
+                   "post","look","right","now","think","'ve ",
+                   "'re ","anoth","put","set","new","good",
+                   "want","sure","kind","larg","yes,","day","etc",
+                   "quit","sinc","attempt","lack","seen","awar",
+                   "littl","ever","moreov","though","found","abl",
+                   "enough","far","earli","away","achiev","draw",
+                   "last","never","brief","bit","entir","brief",
+                   "great","the","this","around","get","alway","seem"
+                   ,"give","cant","realli","didnt","made","went","there"
+                   ,"know","they","but","that","ive","its","its"
+                   ,"dont","your","doesnt","just","got")
+  docs <- tm_map(docs, removeWords, myStopwords)
+  #remove whitespace
+  docs <- tm_map(docs, stripWhitespace)
+  # stemming
+  docs <- tm_map(docs, stemDocument)
+  
+  # create document term matrix
+  dtm  <- DocumentTermMatrix(docs)
+  return(dtm)
+  #dtm.new   <- dtm[apply(dtm , 1, sum)> 0, ]           #remove all docs without words
+}
+```
+
+## Load the Yelp Dataset
+
+```{r}
+load("C:/Users/ACER/Desktop/Topic Modelling/Data/yelp_DD.RData") 
+
+```
+
+## Combine Starbucks and Dunkin' Donuts reviews datasets
+
+```{r}
+review_all <- rbind(review_DD, review_Starbucks)
+
+```
+
+#Create dtm from the review text
+```{r}
+
+library(tm)
+library(topicmodels)
+library(data.table)
+
+myReader <- readTabular(mapping=list(content="text", id="review_id"))
+review_2 <- review_all[, c('review_id', 'text')]
+review <- as.data.frame(review_2)
+#create corpus from vector
+docs <- Corpus(DataframeSource(review), readerControl=list(reader=myReader))
+
+#execute pre-processing function
+dtm <- createdtm(docs)
+
+#Set parameters for Gibbs sampling for LDA
+burnin <- 4000
+iter <- 2000
+thin <- 500
+seed <-list(2003,5,63,100001,765)
+nstart <- 5
+best <- TRUE
+```
+####All Ratings - optimal k#####
+#determine the optimal K
+```{r}
+best.model <- lapply(seq(2, 10, by = 2), function(d){LDA(dtm, d)})
+
+best.model.logLik <- as.data.frame(as.matrix(lapply(best.model, logLik)))
+best.model.logLik.df <- data.frame(topics=c(seq(2,10, by=2)), LL=as.numeric(as.matrix(best.model.logLik)))
+k=best.model.logLik.df[which.max(best.model.logLik.df$LL),1]
+
+#Run LDA using Gibbs sampling
+ldaOut <-LDA(dtm,k, method= "Gibbs", control=list(nstart=nstart, seed = seed, best=best, burnin = burnin, iter = iter, thin=thin))
+
+#top 10 terms in each topic
+ldaOut.terms.allrating <- as.matrix(terms(ldaOut,10))
+ldaOut.terms.allrating
+ldaOut.topic.allrating <- topics(ldaOut)
+
+#probabilities associated with each topic assignment
+gamma_out <- as.data.frame(ldaOut@gamma)
+
+allrating <- data.frame(ldaOut.topic.allrating, gamma_out)
+setDT(allrating, keep.rownames = TRUE)[]
+names(allrating)[names(allrating) == 'rn'] <- 'review_id'
+#Merge the new variables of topic assigned and probabilities associated with each topic assignment with the original review table
+allrating_final <- merge(allrating, review)
+```
+
+####All Ratings, k = 5#####
+```{r}
+
+
+#Run LDA using Gibbs sampling
+ldaOut <-LDA(dtm,5, method= "Gibbs", control=list(nstart=nstart, seed = seed, best=best, burnin = burnin, iter = iter, thin=thin))
+
+#top 10 terms in each topic
+ldaOut.terms.allrating.k5 <- as.matrix(terms(ldaOut,10))
+ldaOut.terms.allrating.k5
+ldaOut.topic.allrating.k5 <- topics(ldaOut)
+
+#probabilities associated with each topic assignment
+gamma_out <- as.data.frame(ldaOut@gamma)
+
+allrating.k5 <- data.frame(ldaOut.topic.allrating.k5, gamma_out)
+setDT(allrating.k5, keep.rownames = TRUE)[]
+names(allrating.k5)[names(allrating.k5) == 'rn'] <- 'review_id'
+#Merge the new variables of topic assigned and probabilities associated with each topic assignment with the original review table
+allrating.k5_final_DD <- merge(allrating.k5, review)
+
+#names(allrating.k5_final_DD)[names(allrating.k5_final_DD) == 'ldaOut.topic.allrating.k5'] <- "R_LDA_topic"
+#names(allrating.k5_final_DD)[names(allrating.k5_final_DD) == 'V1'] <- "R_Topic1_prob"
+#names(allrating.k5_final_DD)[names(allrating.k5_final_DD) == 'V2'] <- "R_Topic2_prob"
+#names(allrating.k5_final_DD)[names(allrating.k5_final_DD) == 'V3'] <- "R_Topic3_prob"
+#names(allrating.k5_final_DD)[names(allrating.k5_final_DD) == 'V4'] <- "R_Topic4_prob"
+#names(allrating.k5_final_DD)[names(allrating.k5_final_DD) == 'V5'] <- "R_Topic5_prob"
+
+#library("xlsx")
+#write.xlsx(x = allrating.k5_final_DD, file = "TopicModelling_DD.xlsx",
+       # sheetName = "TestSheet", row.names = FALSE)
+```
+####All Ratings, k = 10#####
+```{r}
+
+
+#Run LDA using Gibbs sampling
+ldaOut <-LDA(dtm,10, method= "Gibbs", control=list(nstart=nstart, seed = seed, best=best, burnin = burnin, iter = iter, thin=thin))
+
+#top 10 terms in each topic
+ldaOut.terms.allrating.k10 <- as.matrix(terms(ldaOut,10))
+ldaOut.terms.allrating.k10
+ldaOut.topic.allrating.k10 <- topics(ldaOut)
+
+#probabilities associated with each topic assignment
+gamma_out <- as.data.frame(ldaOut@gamma)
+
+allrating.k10 <- data.frame(ldaOut.topic.allrating.k10, gamma_out)
+setDT(allrating.k10, keep.rownames = TRUE)[]
+names(allrating.k10)[names(allrating.k10) == 'rn'] <- 'review_id'
+#Merge the new variables of topic assigned and probabilities associated with each topic assignment with the original review table
+allrating.k10_final_DD <- merge(allrating.k10, review)
+
+
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'ldaOut.topic.allrating.k10'] <- "R_LDA_topic"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V1'] <- "R_Topic1_prob"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V2'] <- "R_Topic2_prob"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V3'] <- "R_Topic3_prob"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V4'] <- "R_Topic4_prob"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V5'] <- "R_Topic5_prob"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V6'] <- "R_Topic6_prob"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V7'] <- "R_Topic7_prob"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V8'] <- "R_Topic8_prob"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V9'] <- "R_Topic9_prob"
+#names(allrating.k10_final_DD)[names(allrating.k10_final_DD) == 'V10'] <- "R_Topic10_prob"
+
+#library("xlsx")
+#write.xlsx(x = allrating.k10_final_DD, file = "TopicModelling_DD.xlsx",
+#        sheetName = "TestSheet", row.names = FALSE)
+```
+###LDA comparison by probabilities associated with the topic assignment
+###Step 1: Join the required columns for multinomial logistic regression models
+
+```{r}
+library(sqldf)
+
+
+
+#LDA on the whole review dataset with optimal k
+all <- merge(allrating, review_DD)
+
+#LDA on the whole review dataset with k = 5
+allk5 <- merge(allrating.k5, review_DD)
+
+#LDA on the whole review dataset with k = 10
+allk10 <- merge(allrating.k10, review_DD)
+
+```
+
+###Step 2: Run the multinomial logistic regression models
+```{r}
+
+
+library(nnet)
+#LDA on the whole review dataset with optimal k
+score_all <- multinom(stars ~ V1 + V2, data = all)
+
+#LDA on the whole review dataset with k=5
+score_allk5 <- multinom(stars ~ V1 + V2 + V3 + V4+ V5, data = allk5)
+
+#LDA on the whole review dataset with k=10
+score_allk10 <- multinom(stars ~ V1 + V2 + V3 + V4+ V5+ V6+ V7+ V8+ V9 + V10, data = allk10)
+
+library(knitr)
+kable(data.frame(Score = c("score_all", "score_allk5",  "score_allk10"), 
+                 'Residual Deviance' = c( score_all$deviance, score_allk5$deviance, score_allk10$deviance), 
+                 AIC = c(score_all$AIC, score_allk5$AIC, score_allk10$AIC)), caption = "Topic Modelling Evaluation")
+
+
+```
+
+
+###LDA comparison by topic assignment
+###Run the multinomial logistic regression models
+
+```{r}
+
+names(all)[names(all) == 'ldaOut.topic.allrating'] <- "ldaOut_topic_allrating"
+names(allk5)[names(allk5) == 'ldaOut.topic.allrating.k5'] <- "ldaOut_topic_allrating_k5"
+names(allk10)[names(allk10) == 'ldaOut.topic.allrating.k10'] <- "ldaOut_topic_allrating_k10"
+
+
+#LDA on the whole review dataset with optimal k
+score_all_topic <- multinom(stars ~ ldaOut_topic_allrating, data = all)
+#LDA on the whole review dataset with k = 5
+score_allk5_topic <- multinom(stars ~ ldaOut_topic_allrating_k5, data = allk5)
+#LDA on the whole review dataset with k = 10
+score_allk10_topic <- multinom(stars ~ ldaOut_topic_allrating_k10, data = allk10)
+
+kable(data.frame(Score = c("score_all_topic", "score_allk5_topic", "score_allk10_topic"), 
+                 'Residual Deviance' = c(score_all_topic$deviance, score_allk5_topic$deviance, score_allk10_topic$deviance), 
+                 AIC = c(score_all_topic$AIC, score_allk5_topic$AIC, score_allk10_topic$AIC)), caption = "Topic Modelling Evaluation - topic")
+
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+```
+
+
+

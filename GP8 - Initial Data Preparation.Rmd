@@ -1,0 +1,60 @@
+---
+title: "DMT Final Project - Initial Data Preparation"
+author: "Group 8"
+date: "23 April, 2017"
+output: html_document
+---
+
+```{r}
+#data preparation
+
+#load from csv file
+#setwd("C:/Users/changhua/Desktop/MSBA/R/Data")
+
+yelp_academic_dataset_review <- read.csv("./yelp_academic_dataset_review")
+yelp_academic_dataset_business <-read.csv("./yelp_academic_dataset_business")
+yelp_academic_dataset_tip <-read.csv("./yelp_academic_dataset_tip")
+yelp_academic_dataset_user <-read.csv("./yelp_academic_dataset_user")
+#yelp_academic_dataset_checkin <-read.csv("./yelp_academic_dataset_checkin")
+
+#apply filter, get latest 2 years review
+review_recent2year <- subset(yelp_academic_dataset_review, date >= '2015-01-20') #last 2 years
+#get corresponding users
+user <- subset(yelp_academic_dataset_user, yelp_academic_dataset_user$user_id %in% review_recent2year$user_id)
+#get corresponding business
+business <- subset(yelp_academic_dataset_business, yelp_academic_dataset_business$business_id %in% review_recent2year$business_id)
+
+#install.packages("plyr")
+library(plyr)
+summary(business)
+
+#check which business have most review
+business <- as.data.frame(business)
+namecount <- count(business, vars = "name")
+View(Namecount)
+
+#decide to be consultant to Starbucks, with close examination on Starbucks' review and its competitor, Dunkin‘ Donuts
+business_Starbucks <- subset(business, name == "Starbucks")
+business_DD <- subset(business, name == "Dunkin' Donuts")
+
+review_Starbucks <- subset(review_recent2year, business_id %in% business_Starbucks$business_id )
+user_Starbucks <- subset(user, user$user_id %in% review_Starbucks$user_id)
+review_DD <- subset(review_recent2year, business_id %in% business_DD$business_id )
+user_DD <- subset(yelp_academic_dataset_user, yelp_academic_dataset_user$user_id %in% review_DD$user_id)
+
+# extract last 2 years data from tip
+yelp_academic_dataset_tip$date <- as.Date(yelp_academic_dataset_tip$date)
+tip_recent2year <- subset(yelp_academic_dataset_tip, date>= '2015-01-20') #last 2 years
+tip_Starbucks <- subset(tip_recent2year, business_id %in% business_Starbucks$business_id)
+tip_DD <- subset(tip_recent2year, business_id %in% business_DD$business_id)
+
+#remove original dataset
+remove(yelp_academic_dataset_review)
+remove(yelp_academic_dataset_user)
+remove(yelp_academic_dataset_tip)
+remove(yelp_academic_dataset_business)
+#remove(yelp_academic_dataset_checkin)
+
+```
+
+

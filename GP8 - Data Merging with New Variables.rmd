@@ -1,0 +1,154 @@
+---
+title: "DMT Final Project - Data Merging with New Variables"
+author: "Group 8"
+date: "23 April, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+options(width=120)
+knitr::opts_chunk$set(comment = "", warning = FALSE, message = FALSE, echo = TRUE, tidy = TRUE, size="small",progress = FALSE)
+
+library(knitr)
+library(data.table)
+library(plyr)
+library(stringr)
+library(stargazer)
+
+setwd("C:/Users/ACER/Desktop/Topic Modelling/Data")
+data <- load("yelp_DD.Rdata")
+
+
+```
+
+## User
+```{r}
+user1 <- rbind(user_Starbucks, user_DD)
+
+user1 <- unique(user1)
+#Standardize Column Names
+for (i in 1:14){
+  colnames(user1)[i] <- paste("U", colnames(user1)[i], sep = "_")
+  }
+
+for (i in 16:21){
+  colnames(user1)[i] <- paste("U", colnames(user1)[i], sep = "_")
+  }
+
+```
+
+
+
+## Business
+### To Merge with Location Cluster
+```{r}
+
+setwd("C:/Users/ACER/Desktop/Topic Modelling/Data")
+
+#Remove unused attributes/categories from business_Starbcks
+business_Starbucks[,c("attributes","categories")] <- NULL
+
+#Rbind business_Starbucks with business_DD
+business0 <- rbind(business_Starbucks, business_DD)
+
+#Load results from Business Cluster
+business_clut <- readRDS("business_cluster.rds")
+
+#Combine Business Cluster to "business0"
+business1 <- merge(x = business0,y = business_clut, by="business_id",all.x = T)
+business1$clust <- as.character(business1$clust)
+
+#Impute "N/A" as zero
+index <- is.na(business1$clust)
+business1$clust[index] <- "0"
+business1$clust <- as.factor(business1$clust)
+
+#Standardize Column Names
+for (i in 2:ncol(business1)){
+  colnames(business1)[i] <- paste("B", colnames(business1)[i], sep = "_")
+  }
+```
+
+
+### To Merge with Sentiment Scores
+```{r}
+setwd("C:/Users/ACER/Desktop/Topic Modelling/Data")
+
+senti_s <- readRDS("review_senti_score_s.rds")
+review_Starbucks <- merge(review_Starbucks, senti_s, by = "review_id")
+
+senti_DD <- readRDS("review_senti_score_DD.rds")
+review_DD <- merge(review_DD, senti_DD, by = "review_id")
+
+review1 <- rbind(review_Starbucks,review_DD)
+```
+
+### Merge with Topic (LDA) 
+```{r}
+setwd("C:/Users/ACER/Desktop/Topic Modelling/Data")
+
+lda_s <- readRDS("LDA_k10_SB.rds")
+review_Starbucks <- merge(review_Starbucks, lda_s)
+
+lda_DD <- readRDS("LDA_k10_DD.rds")
+review_DD <- merge(review_DD, lda_DD)
+
+review1 <- rbind(review_Starbucks,review_DD)
+
+```
+
+### Merge with Topic (Text Classification) 
+```{r}
+setwd("C:/Users/ACER/Desktop/Topic Modelling/Data/Text Classification")
+getwd()
+tc_suplabel <- get(load("Sup_Labels.Rdata"))
+
+tc_s <- get(load("Labels_SB.Rdata"))
+tc_DD <- get(load("Labels_DD.Rdata"))
+
+review1$R_Bad_Service <- tc_suplabel$Bad_Service
+review1$R_Bad_Food <- tc_suplabel$Bad_Food
+review1$R_Bad_Ambience <- tc_suplabel$Bad_Ambition
+review1$R_Bad_Facility <- tc_suplabel$Bad_Facility
+review1$R_Bad_Value <- tc_suplabel$Bad_Value
+review1$Franchise <- tc_suplabel$Franchise
+
+```
+
+### Remove unused datasets
+```{r}
+rm(business0)
+rm(review_recent2year)
+rm(senti_DD)
+rm(senti_s)
+rm(text_Starbuck.business)
+rm(text_Starbuck.date)
+rm(text_Starbuck.user)
+rm(tip_recent2year)
+rm(business_attr_cat)
+rm(business)
+rm(business_clut)
+rm(business_DD)
+rm(business_Starbucks)
+rm(business_Starbucks.tbl)
+rm(data)
+```
+
+
+```{r}
+
+saveRDS(review1, "review1.rds")
+saveRDS(business1, "business1.rds")
+saveRDS(user1, "user1.rds")
+```
+
+
+
+
+
+
+
+
+
+
+

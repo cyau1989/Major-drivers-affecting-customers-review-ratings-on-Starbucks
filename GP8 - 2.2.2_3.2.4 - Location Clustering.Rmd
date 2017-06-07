@@ -1,0 +1,90 @@
+---
+title: "DMT Final Project - Location Clustering"
+author: "Group 8"
+date: "23 April, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+options(width=120)
+knitr::opts_chunk$set(comment = "", warning = FALSE, message = FALSE, echo = TRUE, tidy = TRUE, size="small",progress = FALSE)
+
+library(knitr)
+library(data.table)
+library(plyr)
+library(stringr)
+library(tm)
+library(SnowballC)
+library(RColorBrewer)
+library(wordcloud)
+library(ggplot2)
+library(ggmap)
+library(lubridate)
+library(nnet)
+library(stargazer)
+library(fossil)
+library(geosphere)
+
+setwd("C:/Users/Lu/OneDrive/MSBA/Term 2/DMT/Final Project")
+data <- load("yelp_DD.Rdata")
+```
+
+### Existing Information on Location
+```{r}
+business_Starbucks$neighborhood <- as.factor(business_Starbucks$neighborhood)
+business_Starbucks$postal_code <- as.factor(business_Starbucks$postal_code)
+
+str(business_Starbucks[,c("neighborhood","postal_code")])
+summary(business_Starbucks[,c("neighborhood","postal_code")])
+
+business_DD$neighborhood <- as.factor(business_DD$neighborhood)
+business_DD$postal_code <- as.factor(business_DD$postal_code)
+
+str(business_DD[,c("neighborhood","postal_code")])
+summary(business_DD[,c("neighborhood","postal_code")])
+
+```
+
+### Clustering by longitude and latitude on Las Vegas and Phoenix
+```{r}
+business_Starbucks[,c("attributes","categories")] <- NULL 
+business_bind <- rbind(business_Starbucks, business_DD)
+business_cluster <- business_bind[which(business_bind$city %in% c("Las Vegas","Phoenix")),c("longitude","latitude","city","business_id")]
+d = earth.dist(business_cluster)
+
+geo.dist = function(df) {
+  d <- function(i,z){         # z[1:2] contain long, lat
+    dist <- rep(0,nrow(z))
+    dist[i:nrow(z)] <- distHaversine(z[i:nrow(z),1:2],z[i,1:2])
+    return(dist)
+  }
+  dm <- do.call(cbind,lapply(1:nrow(df),d,df))
+  return(as.dist(dm))
+}
+
+set.seed(123)
+km <- kmeans(geo.dist(business_cluster),centers = 28)
+hc <- hclust(geo.dist(business_cluster))
+business_cluster$clust <- cutree(hc, k=28) 
+business_cluster$clust <- as.factor(business_cluster$clust)
+business_cluster$city <- as.factor(business_cluster$city)
+summary(business_cluster)
+```
+
+
+```{r,echo = FALSE}
+map1 <- get_map(location="Las Vegas",zoom=11,maptype = "toner",messaging = F)
+map2 <- get_map(location="Phoenix",zoom=11,maptype = "toner",messaging = F)
+
+plot1 <- ggmap(map1, extent = "device") + geom_point(data=business_cluster, aes(x=longitude, y=latitude, color=clust), size=4, show.legend = F)+ coord_fixed()+labs(title  = "Las Vegas")
+plot1
+
+plot2 <- ggmap(map2, extent = "device") + geom_point(data=business_cluster, aes(x=longitude, y=latitude, color=clust), size=4, show.legend = F)+ coord_fixed()+labs(title  = "Phoenix")
+plot2
+ggsave("cluster_ph.jpg", plot2)
+```
+
+```{r}
+business_cluster <- business_cluster[,c(4,5)]
+```
+

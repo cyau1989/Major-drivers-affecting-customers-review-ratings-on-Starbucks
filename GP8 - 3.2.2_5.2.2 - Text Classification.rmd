@@ -1,0 +1,203 @@
+---
+title: "DMT Final Project - Text Classification"
+author: "Yang Kan"
+date: "24 Apr, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+options(width=120)
+knitr::opts_chunk$set(comment = "", warning = FALSE, message = FALSE, echo = TRUE, tidy = TRUE, size="small",progress = FALSE)
+
+library(RTextTools)
+library(tm)
+
+load("yelp_DD.Rdata")
+
+
+```
+# The following section is to use supervised learning to construct additional variable for the final model(Text Classification). 
+## First try SVM and RF for training and validation to see performance. Also try 3 types of labelling.  
+```{r}
+#Load manual labelling files
+load("Labels_DD.Rdata")
+load("Labels_SB.Rdata")
+
+#load text mining libraries
+library(RTextTools)
+library(tm)
+```
+###try 3 labels: negative(-1), Not mentioned(0), Positive(1)
+```{r}
+manual_label <- rbind(Labels_SB, Labels_DD)
+dtMatrix <- create_matrix(manual_label["text"], language="english", removeNumbers=TRUE, stemWords=TRUE, removeSparseTerms=.998) 
+container_3L <- create_container(dtMatrix, manual_label$Service, trainSize=41:200,testSize=1:40, virgin=FALSE)
+
+#try SVM linear
+SVM_3L <- train_model(container_3L,"SVM", kernel="linear", cost=1)
+SVM_CLASSIFY_3L <- classify_model(container_3L, SVM_3L)
+cm_svm_3L <- table(SVM_CLASSIFY_3L$SVM_LABEL == manual_label[1:40,]$Service)
+cm_svm_3L["TRUE"]/(cm_svm_3L["TRUE"] + cm_svm_3L["FALSE"]) # accuracy
+
+#try SVM Radial
+SVM_3L_R <- train_model(container_3L,"SVM", kernel="radial", cost=1)
+SVM_CLASSIFY_3L_R <- classify_model(container_3L, SVM_3L_R)
+cm_svm_3L_R <- table(SVM_CLASSIFY_3L_R$SVM_LABEL == manual_label[1:40,]$Service)
+cm_svm_3L_R["TRUE"]/(cm_svm_3L_R["TRUE"] + cm_svm_3L_R["FALSE"]) # accuracy
+
+#Try Ramdom Forest
+RF_3L <- train_model(container_3L,"RF")
+RF_CLASSIFY_3L <- classify_model(container_3L, RF_3L)
+cm_rf_3L <- table (RF_CLASSIFY_3L$FORESTS_LABEL == manual_label[1:40,]$Service)
+cm_rf_3L["TRUE"]/(cm_rf_3L["TRUE"] + cm_rf_3L["FALSE"]) # accuracy
+
+#Evaluate Performance
+analytics_3L <- create_analytics(container_3L,
+                              cbind(SVM_CLASSIFY_3L, SVM_CLASSIFY_3L_R,
+                                    RF_CLASSIFY_3L))
+summary(analytics_3L)
+```
+###try 2 labels: Good review(Y/N) -> negative(-1 -> 0), Not mentioned(0), Positive(1)
+```{r}
+Service_TL1 <- ifelse(manual_label$Service == "-1", "0", manual_label$Service)
+container_TL1 <- create_container(dtMatrix, Service_TL1, trainSize=41:200,testSize=1:40, virgin=FALSE)
+
+#try SVM linear
+SVM_TL1 <- train_model(container_TL1,"SVM", kernel="linear", cost=1)
+SVM_CLASSIFY_TL1 <- classify_model(container_TL1, SVM_TL1)
+cm_svm_TL1 <- table(SVM_CLASSIFY_TL1$SVM_LABEL == Service_TL1[1:40])
+cm_svm_TL1["TRUE"]/(cm_svm_TL1["TRUE"] + cm_svm_TL1["FALSE"]) # accuracy
+
+#try SVM Radial
+SVM_TL1_R <- train_model(container_TL1,"SVM", kernel="radial", cost=1)
+SVM_CLASSIFY_TL1_R <- classify_model(container_TL1, SVM_TL1_R)
+cm_svm_TL1_R <- table(SVM_CLASSIFY_TL1_R$SVM_LABEL == Service_TL1[1:40])
+cm_svm_TL1_R["TRUE"]/(cm_svm_TL1_R["TRUE"] + cm_svm_TL1_R["FALSE"]) # accuracy
+
+#Try Ramdom Forest
+RF_TL1 <- train_model(container_TL1,"RF")
+RF_CLASSIFY_TL1 <- classify_model(container_TL1, RF_TL1)
+cm_rf_TL1 <- table (RF_CLASSIFY_TL1$FORESTS_LABEL == Service_TL1[1:40])
+cm_rf_TL1["TRUE"]/(cm_rf_TL1["TRUE"] + cm_rf_TL1["FALSE"]) # accuracy
+
+#Evaluate Performance
+analytics_TL1 <- create_analytics(container_TL1,
+                                 cbind(SVM_CLASSIFY_TL1, SVM_CLASSIFY_TL1_R,
+                                       RF_CLASSIFY_TL1))
+summary(analytics_TL1)
+```
+###try 2 labels: Bad review (Y/N) -> negative(-1), Not mentioned(0), Positive(1 -> 0)                              
+```{r}                          
+Service_TL2 <- ifelse(manual_label$Service == "1", "0", manual_label$Service)
+container_TL2 <- create_container(dtMatrix, Service_TL2, trainSize=41:200,testSize=1:40, virgin=FALSE)
+
+#try SVM linear
+SVM_TL2 <- train_model(container_TL2,"SVM", kernel="linear", cost=1)
+SVM_CLASSIFY_TL2 <- classify_model(container_TL2, SVM_TL2)
+cm_svm_TL2 <- table(SVM_CLASSIFY_TL2$SVM_LABEL == Service_TL2[1:40])
+cm_svm_TL2["TRUE"]/(cm_svm_TL2["TRUE"] + cm_svm_TL2["FALSE"]) # accuracy
+
+#try SVM Radial
+SVM_TL2_R <- train_model(container_TL2,"SVM", kernel="radial", cost=1)
+SVM_CLASSIFY_TL2_R <- classify_model(container_TL2, SVM_TL2_R)
+cm_svm_TL2_R <- table(SVM_CLASSIFY_TL2_R$SVM_LABEL == Service_TL2[1:40])
+cm_svm_TL2_R["TRUE"]/(cm_svm_TL2_R["TRUE"] + cm_svm_TL2_R["FALSE"]) # accuracy
+
+#Try Ramdom Forest
+RF_TL2 <- train_model(container_TL2,"RF")
+RF_CLASSIFY_TL2 <- classify_model(container_TL2, RF_TL2)
+cm_rf_TL2 <- table (RF_CLASSIFY_TL2$FORESTS_LABEL == Service_TL2[1:40])
+cm_rf_TL2["TRUE"]/(cm_rf_TL2["TRUE"] + cm_rf_TL2["FALSE"]) # accuracy
+
+analytics_TL2 <- create_analytics(container_TL2,
+                                  cbind(SVM_CLASSIFY_TL2, SVM_CLASSIFY_TL2_R,
+                                        RF_CLASSIFY_TL2))
+summary(analytics_TL2)
+
+```
+##According to the performance, 2 labels with Bad review (Y/N) perform the best, and the best model is random forest. Will use this method for labelling and prediction.
+###Constructing training and test data frame
+```{r}
+#construct data frame
+train_data <- data.frame(matrix(ncol = 9, nrow = 200))
+column_names <- c("Franchise", "Review_ID", "Text","Stars","Bad_Service","Bad_Food","Bad_Ambition","Bad_Facility","Bad_Value")
+colnames(train_data) <- column_names
+
+#construct training data
+train_data$Franchise[1:150] <- "SB"
+train_data$Franchise[151:200] <- "DD"
+train_data$Review_ID <- manual_label$review_id
+train_data$Text <- manual_label$text
+train_data$Stars <- manual_label$stars
+train_data$Bad_Service <- ifelse(manual_label$Service == "-1", "Y", "N")
+train_data$Bad_Food <- ifelse(manual_label$Food == "-1", "Y", "N")
+train_data$Bad_Ambition <- ifelse(manual_label$Ambition == "-1", "Y", "N")
+train_data$Bad_Facility <- ifelse(manual_label$Facility == "-1", "Y", "N")
+train_data$Bad_Value <- ifelse(manual_label$Promotion == "-1", "Y", "N")
+
+#construct prediction data
+test_rows <- nrow(review_Starbucks)+nrow(review_DD)-nrow(train_data)
+test_data <- data.frame(matrix(ncol = 9, nrow = test_rows))
+colnames(test_data) <- column_names
+
+test_rows_sb <- nrow(review_Starbucks)-150
+test_data$Franchise[1:test_rows_sb] <- "SB"
+test_data$Review_ID[1:test_rows_sb] <- review_Starbucks$review_id[151:nrow(review_Starbucks)]
+test_data$Text[1:test_rows_sb] <- review_Starbucks$text[151:nrow(review_Starbucks)]
+test_data$Stars[1:test_rows_sb] <- review_Starbucks$stars[151:nrow(review_Starbucks)]
+
+test_data$Franchise[(test_rows_sb+1):test_rows] <- "DD"
+test_data$Review_ID[(test_rows_sb+1):test_rows] <- review_DD$review_id[51:nrow(review_DD)]
+test_data$Text[(test_rows_sb+1):test_rows] <- review_DD$text[51:nrow(review_DD)]
+test_data$Stars[(test_rows_sb+1):test_rows] <- review_DD$stars[51:nrow(review_DD)]
+
+Sup_data <- rbind(train_data, test_data)
+Sup_Matrix <- create_matrix(Sup_data["Text"], language="english", removeNumbers=TRUE, stemWords=TRUE, removeSparseTerms=.998) # "Content" is the column heading
+```
+###Predict Bad Service
+```{r}
+container_svc <- create_container(Sup_Matrix, Sup_data$Bad_Service, trainSize=1:200,testSize=201:nrow(Sup_data), virgin=FALSE)
+RF_svc <- train_model(container_svc,"RF")
+RF_CLASSIFY_svc <- classify_model(container_svc, RF_svc)
+Sup_data$Bad_Service <- as.factor(Sup_data$Bad_Service)
+Sup_data$Bad_Service[201:nrow(Sup_data)] <- RF_CLASSIFY_svc$FORESTS_LABEL
+```
+###Predict Bad Food
+```{r}
+container_fd <- create_container(Sup_Matrix, Sup_data$Bad_Food, trainSize=1:200,testSize=201:nrow(Sup_data), virgin=FALSE)
+RF_fd <- train_model(container_fd,"RF")
+RF_CLASSIFY_fd <- classify_model(container_fd, RF_fd)
+Sup_data$Bad_Food <- as.factor(Sup_data$Bad_Food)
+Sup_data$Bad_Food[201:nrow(Sup_data)] <- RF_CLASSIFY_fd$FORESTS_LABEL
+```
+###Predict Bad Facility
+```{r}
+container_fcl <- create_container(Sup_Matrix, Sup_data$Bad_Facility, trainSize=1:200,testSize=201:nrow(Sup_data), virgin=FALSE)
+RF_fcl <- train_model(container_fcl,"RF")
+RF_CLASSIFY_fcl <- classify_model(container_fcl, RF_fcl)
+Sup_data$Bad_Facility <- as.factor(Sup_data$Bad_Facility)
+Sup_data$Bad_Facility[201:nrow(Sup_data)] <- RF_CLASSIFY_fcl$FORESTS_LABEL
+```
+###Predict Bad Ambition
+```{r}
+container_amb <- create_container(Sup_Matrix, Sup_data$Bad_Ambition, trainSize=1:200,testSize=201:nrow(Sup_data), virgin=FALSE)
+RF_amb <- train_model(container_amb,"RF")
+RF_CLASSIFY_amb <- classify_model(container_amb, RF_amb)
+Sup_data$Bad_Ambition <- as.factor(Sup_data$Bad_Ambition)
+Sup_data$Bad_Ambition[201:nrow(Sup_data)] <- RF_CLASSIFY_amb$FORESTS_LABEL
+```
+###Predict Bad Value
+```{r}
+container_val <- create_container(Sup_Matrix, Sup_data$Bad_Value, trainSize=1:200,testSize=201:nrow(Sup_data), virgin=FALSE)
+RF_val <- train_model(container_val,"RF")
+RF_CLASSIFY_val <- classify_model(container_val, RF_val)
+Sup_data$Bad_Value <- as.factor(Sup_data$Bad_Value)
+Sup_data$Bad_Value[201:nrow(Sup_data)] <- RF_CLASSIFY_val$FORESTS_LABEL
+```
+###Export result
+```{r}
+save(Sup_data, file = "Sup_Labels.RData")
+```
+
+
+
